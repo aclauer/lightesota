@@ -3,8 +3,8 @@ import { useStore, type View } from "../state/store";
 
 const items: { id: View; label: string; icon: typeof Play; min?: "admin" | "editor" }[] = [
   { id: "live", label: "Live", icon: Play },
-  { id: "patterns", label: "Patterns", icon: LayoutGrid },
   { id: "agent", label: "Agent", icon: Bot, min: "editor" },
+  { id: "patterns", label: "Patterns", icon: LayoutGrid },
   { id: "stage", label: "Stage", icon: Map, min: "admin" },
   { id: "settings", label: "Settings", icon: Settings },
 ];
