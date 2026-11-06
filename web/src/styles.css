@@ -144,6 +144,7 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; }
 label.field { display: grid; gap: 5px; font-size: 12.5px; color: var(--fg-2); }
 label.field > span:first-child { font-weight: 500; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+label.row:has(> .switch) { flex-wrap: nowrap; }
 .row.nowrap { flex-wrap: nowrap; }
 .stack { display: grid; gap: 10px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; min-width: 0; }
@@ -213,9 +214,9 @@ input[type=range]:disabled { opacity: 0.4; }
 .pcard { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; display: grid; gap: 8px; text-align: left; color: inherit; cursor: pointer; transition: border-color 0.15s, transform 0.1s; min-width: 0; }
 .pcard:hover { border-color: var(--line-strong); }
 .pcard.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-.pcard .name { font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.pcard .name { font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 22px; }
 .pcard .name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pcard .desc { font-size: 12px; color: var(--fg-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.6em; }
+.pcard .desc { font-size: 12px; color: var(--fg-2); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.9em; max-height: 2.9em; }
 .pcard .tags { display: flex; gap: 4px; flex-wrap: wrap; }
 .pcard .tags .pill { font-size: 10.5px; padding: 1px 6px; }
 .scene-card { position: relative; }
@@ -237,7 +238,7 @@ input[type=range]:disabled { opacity: 0.4; }
 .editor .side { overflow: auto; min-height: 0; display: grid; gap: 10px; align-content: start; }
 .err { background: var(--danger-soft); color: var(--danger); padding: 8px 10px; border-radius: var(--radius-sm); font-family: var(--mono); font-size: 12px; white-space: pre-wrap; }
 .okmsg { background: rgba(95, 211, 154, 0.12); color: var(--ok); padding: 8px 10px; border-radius: var(--radius-sm); font-size: 12.5px; }
-@media (max-width: 1100px) { .editor { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; height: auto; } .editor .code { min-height: 420px; } }
+@media (max-width: 1100px) { .editor { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; height: auto; } .editor .code { min-height: 420px; } .editor .list .plist { display: none; } }
 .plist { display: grid; gap: 6px; }
 .plist button { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid transparent; background: transparent; color: var(--fg); text-align: left; width: 100%; }
 .plist button:hover { background: var(--surface); }
@@ -290,7 +291,7 @@ table.tbl th { font-size: 11px; color: var(--fg-3); text-transform: uppercase; l
 .tbl-wrap { overflow-x: auto; }
 
 /* Settings */
-.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 12px; align-content: start; }
+.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 12px; align-content: start; align-items: start; }
 .dmxgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 2px; font-family: var(--mono); font-size: 10px; }
 .dmxgrid div { background: var(--surface-2); border-radius: 3px; padding: 3px 0; text-align: center; color: var(--fg-2); position: relative; overflow: hidden; }
 .dmxgrid div.owned { color: var(--fg); }
@@ -333,6 +334,8 @@ table.tbl th { font-size: 11px; color: var(--fg-3); text-transform: uppercase; l
 @media (min-width: 821px) {
   /* Leave room under the content for the floating tile on every tab but Agent. */
   .app:not(.view-agent) > main { padding-bottom: 72px; }
+  .app.pip-visible:is(.view-patterns, .view-settings) > main:not(:has(.editor)) { padding-bottom: 300px; }
+  .app.pip-visible .live .side, .app.pip-visible .editor .side { padding-bottom: 300px; }
 }
 /* Keep the chat clear of the picture-in-picture box. */
 @media (min-width: 1100px) {

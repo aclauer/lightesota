@@ -71,7 +71,7 @@ export function AgentView() {
           <div className="suggestions">{SUGGESTIONS.map((s) => <button key={s} className="btn sm" onClick={() => submit(s)}>{s}</button>)}</div>
         )}
         <div className="composer">
-          <textarea className="input" rows={1} placeholder={busy ? "Working…" : "e.g. “Make the spots strobe on the off-beat and tint the washes teal”"} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }} aria-label="Message" />
+          <textarea className="input" rows={1} placeholder={busy ? "Working…" : window.innerWidth < 600 ? "Describe a look…" : "e.g. “Make the spots strobe on the off-beat and tint the washes teal”"} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }} aria-label="Message" />
           {busy ? <button className="btn danger icon" onClick={() => conv && send({ type: "agent", command: { type: "cancel", conversationId: conv.id } })} aria-label="Stop"><Square /></button>
             : <button className="btn primary icon" onClick={() => submit()} disabled={!text.trim()} aria-label="Send"><Send /></button>}
         </div>

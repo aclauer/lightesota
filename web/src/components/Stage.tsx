@@ -88,7 +88,8 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
         if (sh.kind === "rect" && sh.w && sh.h) {
           ctx.fillRect(X(sh.x), Y(sh.y), sh.w * s.scale, sh.h * s.scale);
           ctx.strokeRect(X(sh.x), Y(sh.y), sh.w * s.scale, sh.h * s.scale);
-          if (sh.text) { ctx.fillStyle = fg3; ctx.font = "11px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(sh.text, X(sh.x + sh.w / 2), Y(sh.y + sh.h / 2)); }
+          const labelPx = Math.min(11, sh.h * s.scale * 0.55);
+          if (sh.text && labelPx >= 7) { ctx.fillStyle = fg3; ctx.font = `${labelPx}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(sh.text, X(sh.x + sh.w / 2), Y(sh.y + sh.h / 2)); }
         } else if (sh.kind === "line" && sh.x2 !== undefined && sh.y2 !== undefined) {
           ctx.beginPath(); ctx.moveTo(X(sh.x), Y(sh.y)); ctx.lineTo(X(sh.x2), Y(sh.y2)); ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1;
         } else if (sh.kind === "label" && sh.text) {

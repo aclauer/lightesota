@@ -64,11 +64,11 @@ export function SettingsView() {
             <h3>Art-Net output</h3>
             <div className="stack">
               <label className="row"><button className={`switch ${local.artnet.enabled ? "on" : ""}`} role="switch" aria-checked={local.artnet.enabled} onClick={() => save({ artnet: { ...local.artnet, enabled: !local.artnet.enabled } })} /> Send Art-Net</label>
+              <label className="field"><span>Node IP (ENTTEC ODE)</span><input className="input mono" value={local.artnet.host} onChange={(e) => setLocal({ ...local, artnet: { ...local.artnet, host: e.target.value } })} onBlur={() => save({ artnet: local.artnet })} /></label>
               <div className="row nowrap">
-                <label className="field" style={{ flex: 2 }}><span>Node IP (ENTTEC ODE)</span><input className="input mono" value={local.artnet.host} onChange={(e) => setLocal({ ...local, artnet: { ...local.artnet, host: e.target.value } })} onBlur={() => save({ artnet: local.artnet })} /></label>
-                <label className="field" style={{ width: 80 }}><span>Port</span><input className="input tabular" type="number" value={local.artnet.port} onChange={(e) => setLocal({ ...local, artnet: { ...local.artnet, port: Number(e.target.value) } })} onBlur={() => save({ artnet: local.artnet })} /></label>
-                <label className="field" style={{ width: 80 }}><span>Universe</span><input className="input tabular" type="number" value={local.artnet.universe} onChange={(e) => setLocal({ ...local, artnet: { ...local.artnet, universe: Number(e.target.value) } })} onBlur={() => save({ artnet: local.artnet })} /></label>
-                <label className="field" style={{ width: 80 }}><span>FPS</span><input className="input tabular" type="number" min={5} max={60} value={local.artnet.fps} onChange={(e) => setLocal({ ...local, artnet: { ...local.artnet, fps: Number(e.target.value) } })} onBlur={() => save({ artnet: local.artnet })} /></label>
+                <label className="field" style={{ flex: 1 }}><span>Port</span><input className="input tabular" type="number" value={local.artnet.port} onChange={(e) => setLocal({ ...local, artnet: { ...local.artnet, port: Number(e.target.value) } })} onBlur={() => save({ artnet: local.artnet })} /></label>
+                <label className="field" style={{ flex: 1 }}><span>Universe</span><input className="input tabular" type="number" value={local.artnet.universe} onChange={(e) => setLocal({ ...local, artnet: { ...local.artnet, universe: Number(e.target.value) } })} onBlur={() => save({ artnet: local.artnet })} /></label>
+                <label className="field" style={{ flex: 1 }}><span>FPS</span><input className="input tabular" type="number" min={5} max={60} value={local.artnet.fps} onChange={(e) => setLocal({ ...local, artnet: { ...local.artnet, fps: Number(e.target.value) } })} onBlur={() => save({ artnet: local.artnet })} /></label>
               </div>
               <div className="stats">
                 <div className="stat"><b className={status?.artnet.sending ? "" : "muted"}>{status?.artnet.sending ? status.artnet.fps : "—"}</b><span>frames/s sent</span></div>
