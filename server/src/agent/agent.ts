@@ -72,9 +72,15 @@ export class AgentService {
 
   // ---- chat ----
   async send(conversationId: string | null, text: string, context?: { patternId?: string | null; by?: string; owner?: { deviceId: string; name: string } }) {
-    const conv = (conversationId ? this.load(conversationId) : null) ?? this.create(context?.owner);
+    const existing = conversationId ? this.load(conversationId) : null;
+    const conv = existing ?? this.create(context?.owner);
     if (!conv.ownerDeviceId && context?.owner) { conv.ownerDeviceId = context.owner.deviceId; conv.ownerName = context.owner.name; }
     const owner = conv.ownerDeviceId;
+    if (!existing) {
+      // Announce the new conversation before any message events so clients can follow the stream.
+      const { history: _h0, ...pub0 } = conv;
+      this.broadcast({ type: "conversation", conversation: pub0 }, conv.id, owner);
+    }
     if (this.running.has(conv.id)) throw new Error("The agent is still working on this conversation");
     if (!this.hasCredentials()) throw new Error("No Anthropic credentials. Set ANTHROPIC_API_KEY in the server environment (see README).");
 
