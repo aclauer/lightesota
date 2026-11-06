@@ -325,6 +325,15 @@ table.tbl th { font-size: 11px; color: var(--fg-3); text-transform: uppercase; l
 .pip-stage canvas { pointer-events: none; }
 .pip.collapsed { width: 220px; }
 @media (max-width: 820px) { .pip { display: none; } }
+/* Floating agent prompt, bottom left */
+.agent-tile { position: fixed; left: calc(var(--nav-w) + max(16px, var(--sal))); bottom: max(16px, var(--sab)); width: 360px; display: flex; gap: 6px; align-items: center; padding: 6px; background: var(--bg-elev); border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: var(--shadow); z-index: 30; }
+.agent-tile .input { min-height: 34px; }
+@media (max-width: 820px) { .agent-tile { display: none; } }
+@media (min-width: 821px) {
+  /* Leave room under the content for the floating tile on every tab but Agent. */
+  .app:not(.view-agent) > main { padding-bottom: 72px; }
+  .view-live .live { height: auto; min-height: 100%; }
+}
 /* Keep the chat clear of the picture-in-picture box. */
 @media (min-width: 1100px) {
   .pip-visible .agent .msgs, .pip-visible .agent .composer, .pip-visible .agent .suggestions { padding-right: 330px; }

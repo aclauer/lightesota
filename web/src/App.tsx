@@ -4,6 +4,7 @@ import { Header } from "./components/Header";
 import { Nav } from "./components/Nav";
 import { Toasts } from "./components/Toasts";
 import { MiniStage } from "./components/MiniStage";
+import { AgentTile } from "./components/AgentTile";
 import { LiveView } from "./views/LiveView";
 import { PatternsView } from "./views/PatternsView";
 import { ScenesView } from "./views/ScenesView";
@@ -16,6 +17,9 @@ import { useHotkeys } from "./lib/hotkeys";
 export function App() {
   const view = useStore((s) => s.view);
   const rig = useStore((s) => s.rig);
+  const can = useStore((s) => s.can);
+  const guestAgent = useStore((s) => s.settings?.agent.guestAccess ?? false);
+  const agentAllowed = can("editor") || (guestAgent && can("guest"));
   useHotkeys();
   useEffect(() => {
     const onHash = () => {
@@ -42,6 +46,7 @@ export function App() {
           : <SettingsView />}
       </main>
       {rig && view !== "live" && <MiniStage />}
+      {rig && view !== "agent" && agentAllowed && <AgentTile />}
       <Toasts />
     </div>
   );

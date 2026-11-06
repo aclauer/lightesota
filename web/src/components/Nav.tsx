@@ -1,11 +1,9 @@
-import { Bot, Film, LayoutGrid, ListMusic, Map, Play, Settings } from "lucide-react";
+import { Bot, LayoutGrid, Map, Play, Settings } from "lucide-react";
 import { useStore, type View } from "../state/store";
 
 const items: { id: View; label: string; icon: typeof Play; min?: "admin" | "editor" }[] = [
   { id: "live", label: "Live", icon: Play },
   { id: "patterns", label: "Patterns", icon: LayoutGrid },
-  { id: "scenes", label: "Scenes", icon: Film },
-  { id: "playlists", label: "Playlists", icon: ListMusic },
   { id: "agent", label: "Agent", icon: Bot, min: "editor" },
   { id: "stage", label: "Stage", icon: Map, min: "admin" },
   { id: "settings", label: "Settings", icon: Settings },
