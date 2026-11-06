@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage } from "node:http";
-import type { Role, Settings } from "@lightesota/shared";
+import type { Role, Settings } from "../../../shared/src/index.js";
 import { config } from "../config.js";
 import { JsonFile } from "../store.js";
 

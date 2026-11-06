@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { Worker } from "node:worker_threads";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { findProfile, type Fixture, type FixtureOverride, type FrameColor, type ParamValues, type Rig } from "@lightesota/shared";
+import { findProfile, type Fixture, type FixtureOverride, type FrameColor, type ParamValues, type Rig } from "../../../shared/src/index.js";
 import { OUT_STRIDE, SILENT_AUDIO, type AudioState, type SandboxFixture } from "./sandbox.js";
 import type { FromWorker, ToWorker } from "./worker.js";
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { Rig } from "@lightesota/shared";
+import type { Rig } from "../../../shared/src/index.js";
 import { planUniverse, renderUniverse } from "./dmx.js";
 import { OUT_STRIDE } from "../engine/sandbox.js";
 import { buildArtDmx, parseArtDmx } from "./artnet.js";

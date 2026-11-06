@@ -1,4 +1,4 @@
-import type { HueLightInfo } from "@lightesota/shared";
+import type { HueLightInfo } from "../../../shared/src/index.js";
 
 /** Minimal Hue Bridge v1 API client with pairing and a rate-limited color updater. */
 export class HueBridge {

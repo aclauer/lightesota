@@ -1,6 +1,6 @@
 import http from "node:http";
 import os from "node:os";
-import type { Rig, Settings } from "@lightesota/shared";
+import type { Rig, Settings } from "../../shared/src/index.js";
 import { AgentService } from "./agent/agent.js";
 import { Auth } from "./api/auth.js";
 import type { AppContext } from "./api/context.js";

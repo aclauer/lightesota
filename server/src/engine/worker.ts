@@ -1,7 +1,7 @@
 // Worker thread: compiles patterns in a vm sandbox and renders frames on request.
 import { parentPort } from "node:worker_threads";
 import { compilePattern, OUT_STRIDE, PatternInstance, SILENT_AUDIO, type AudioState, type SandboxFixture } from "./sandbox.js";
-import type { ParamValues } from "@lightesota/shared";
+import type { ParamValues } from "../../../shared/src/index.js";
 
 export type ToWorker =
   | { type: "load"; slot: "a" | "b"; id: string; source: string; params?: ParamValues; seed: number }

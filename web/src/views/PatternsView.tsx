@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import CodeMirror from "@uiw/react-codemirror";
-import { javascript } from "@codemirror/lang-javascript";
-import { oneDark } from "@codemirror/theme-one-dark";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Bot, Copy, Play, Plus, Save, Trash2 } from "lucide-react";
 import type { Pattern, PatternMeta } from "@lightesota/shared";
 import { useStore } from "../state/store";
 import { ParamControls } from "../components/ParamControls";
 import { Modal } from "../components/Modal";
 import { effectiveTheme } from "../lib/theme";
+
+const CodeEditor = lazy(() => import("../components/CodeEditor"));
 
 const TEMPLATE = `export default {
   name: "My Pattern",
@@ -168,7 +167,9 @@ function PatternEditor({ patternId }: { patternId: string }) {
         </div>
         <div className="cm-wrap">
           {source !== null && (
-            <CodeMirror value={source} height="100%" theme={dark ? oneDark : "light"} extensions={[javascript()]} onChange={(v) => { setSource(v); dirty.current = true; }} basicSetup={{ lineNumbers: true, foldGutter: true, autocompletion: true, bracketMatching: true, highlightActiveLine: true }} />
+            <Suspense fallback={<div className="hint" style={{ padding: 12 }}>Loading editor…</div>}>
+              <CodeEditor value={source} dark={dark} onChange={(v) => { setSource(v); dirty.current = true; }} />
+            </Suspense>
           )}
         </div>
         {error ? <div className="err">{error}</div> : <div className="hint">Tip: <span className="kbd">⌘S</span>/<span className="kbd">Ctrl+S</span> saves{live ? " and reloads the live pattern with the current params" : ""}. Everything in <code>params</code> becomes a live control.</div>}

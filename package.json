@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev -w server\" \"npm run dev -w web\"",
     "build": "npm run build -w shared && npm run build -w web && npm run build -w server",
-    "start": "node server/dist/index.js",
+    "start": "node server/dist/server/src/index.js",
     "typecheck": "tsc -p shared && tsc -p server --noEmit && tsc -p web --noEmit",
     "test": "npm run test -w server"
   },

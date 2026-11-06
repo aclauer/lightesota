@@ -1,4 +1,4 @@
-import { findProfile, type OutputStatus, type Rig, type Settings } from "@lightesota/shared";
+import { findProfile, type OutputStatus, type Rig, type Settings } from "../../../shared/src/index.js";
 import type { Engine, EngineFrame } from "../engine/engine.js";
 import { OUT_STRIDE } from "../engine/sandbox.js";
 import { ArtNetListener, ArtNetSender } from "./artnet.js";

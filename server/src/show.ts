@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import {
   defaultParams, sanitizeParams,
   type AudioFrame, type FixtureOverride, type ParamValues, type Rig, type Scene, type Settings, type ShowState, type Playlist,
-} from "@lightesota/shared";
+} from "../../shared/src/index.js";
 import { Engine } from "./engine/engine.js";
 import type { Library } from "./library.js";
 import { JsonFile } from "./store.js";

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { nanoid } from "nanoid";
-import type { Pattern, PatternMeta, Playlist, Scene } from "@lightesota/shared";
+import type { Pattern, PatternMeta, Playlist, Scene } from "../../shared/src/index.js";
 import { config } from "./config.js";
 import { JsonFile } from "./store.js";
 import { compilePattern, testPattern } from "./engine/sandbox.js";

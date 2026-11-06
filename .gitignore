@@ -9,3 +9,4 @@ data/
 .DS_Store
 .direnv/
 result
+web/public/_frame.html

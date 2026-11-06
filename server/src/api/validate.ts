@@ -1,4 +1,4 @@
-import { findProfile, type Fixture, type Rig } from "@lightesota/shared";
+import { findProfile, type Fixture, type Rig } from "../../../shared/src/index.js";
 
 /** Shape-check a rig coming from a client. Keeps protected ranges from being removed silently. */
 export function validateRig(input: Rig): Rig {

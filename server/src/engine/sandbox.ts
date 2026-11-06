@@ -3,7 +3,7 @@ import {
   clamp, clamp01, fract, hex, hsl, hsv, lerp, luminance, mix, paletteAt, PALETTES, scale, smoothstep, wrap,
   defaultParams, sanitizeParams, validateSchema,
   type ParamSchema, type ParamValues, type RGB,
-} from "@lightesota/shared";
+} from "../../../shared/src/index.js";
 import { noise, noise2, noise3 } from "./noise.js";
 
 /** Fixture description handed to patterns. */

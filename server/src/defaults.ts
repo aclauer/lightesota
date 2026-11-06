@@ -1,4 +1,4 @@
-import type { Rig, Settings } from "@lightesota/shared";
+import type { Rig, Settings } from "../../shared/src/index.js";
 
 /** The office rig as wired on 2026-11-05 (washes in 12CH at 101/113/125/137). */
 export function defaultRig(): Rig {

@@ -1,4 +1,4 @@
-import type { Rig, Settings } from "@lightesota/shared";
+import type { Rig, Settings } from "../../../shared/src/index.js";
 import type { AgentService } from "../agent/agent.js";
 import type { Library } from "../library.js";
 import type { OutputManager } from "../output/output.js";

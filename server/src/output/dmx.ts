@@ -1,4 +1,4 @@
-import { findProfile, type Fixture, type ProtectedRange, type Rig } from "@lightesota/shared";
+import { findProfile, type Fixture, type ProtectedRange, type Rig } from "../../../shared/src/index.js";
 import { OUT_STRIDE } from "../engine/sandbox.js";
 
 export interface DmxPlan {

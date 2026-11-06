@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { nanoid } from "nanoid";
-import type { AgentChatMessage, AgentConversation, AgentEvent, AgentToolCall } from "@lightesota/shared";
+import type { AgentChatMessage, AgentConversation, AgentEvent, AgentToolCall } from "../../../shared/src/index.js";
 import { config } from "../config.js";
 import { dynamicSystem, STATIC_SYSTEM } from "./prompt.js";
 import { runTool, TOOL_DEFS, type AgentHost } from "./tools.js";

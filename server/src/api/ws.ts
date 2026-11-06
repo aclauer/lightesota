@@ -3,7 +3,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { nanoid } from "nanoid";
 import {
   requiredRole, roleAllows, type ClientMessage, type Presence, type Role, type ServerMessage, type Rig, type Settings,
-} from "@lightesota/shared";
+} from "../../../shared/src/index.js";
 import { deepMerge } from "../store.js";
 import type { AppContext } from "./context.js";
 import { validateRig } from "./validate.js";
@@ -26,7 +26,7 @@ export class WsHub {
       const client: Client = { ws, id, role, name: `Guest ${this.clients.size + 1}`, color: COLORS[this.clients.size % COLORS.length], connectedAt: Date.now(), wantsDmx: false, alive: true };
       this.clients.set(id, client);
       this.send(client, { type: "hello", clientId: id, role, serverTime: Date.now(), name: client.name });
-      this.send(client, this.snapshot());
+      this.send(client, this.snapshot(client.role));
       this.broadcastPresence();
       ws.on("message", (data) => this.onMessage(client, data.toString()));
       ws.on("pong", () => { client.alive = true; });
@@ -68,16 +68,22 @@ export class WsHub {
     setInterval(() => this.broadcast({ type: "status", status: ctx.output.status(ctx.agent.hasCredentials()) }), 1000).unref();
   }
 
-  snapshot(): ServerMessage {
+  snapshot(role: Role): ServerMessage {
     const c = this.ctx;
     return {
       type: "snapshot", rig: c.rigFile.get(), show: c.show.state, patterns: c.library.listPatterns(), scenes: c.library.scenes,
-      playlists: c.library.playlists, settings: this.publicSettings(c.settingsFile.get()), status: c.output.status(c.agent.hasCredentials()), presence: this.presence(),
+      playlists: c.library.playlists, settings: this.publicSettings(c.settingsFile.get(), role), status: c.output.status(c.agent.hasCredentials()), presence: this.presence(),
     };
   }
 
-  /** Strip secrets (Hue app key) for non-admin viewers; admins get everything over WS. */
-  private publicSettings(s: Settings): Settings { return s; }
+  /** Strip secrets (the Hue app key) for everyone below admin. */
+  private publicSettings(s: Settings, role: Role): Settings {
+    if (roleAllows(role, "admin")) return s;
+    return { ...s, hue: { ...s.hue, username: s.hue.username ? "(hidden)" : "" } };
+  }
+  private broadcastSettings(s: Settings) {
+    for (const c of this.clients.values()) this.send(c, { type: "settings", settings: this.publicSettings(s, c.role) });
+  }
 
   presence(): Presence[] {
     return [...this.clients.values()].map((c) => ({ id: c.id, name: c.name, role: c.role, color: c.color, connectedAt: c.connectedAt }));
@@ -187,7 +193,7 @@ export class WsHub {
         merged.previewFps = Math.max(5, Math.min(40, Number(merged.previewFps) || 20));
         ctx.settingsFile.set(merged);
         ctx.applyConfig();
-        this.broadcast({ type: "settings", settings: merged });
+        this.broadcastSettings(merged);
         return;
       }
       case "subscribeDmx": client.wantsDmx = msg.on; return;
@@ -198,7 +204,7 @@ export class WsHub {
         hue.pair().then((username) => {
           ctx.settingsFile.update((s) => ({ ...s, hue: { ...s.hue, username } }));
           ctx.applyConfig();
-          this.broadcast({ type: "settings", settings: ctx.settingsFile.get() });
+          this.broadcastSettings(ctx.settingsFile.get());
           this.send(client, { type: "toast", level: "success", text: "Paired with the Hue bridge" });
           if (msg.reqId) this.send(client, { type: "ack", reqId: msg.reqId, result: true });
         }).catch((e: Error) => this.send(client, { type: "error", text: `Hue pairing failed: ${e.message}`, reqId: msg.reqId }));

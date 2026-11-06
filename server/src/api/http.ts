@@ -1,10 +1,10 @@
 import express from "express";
 import fs from "node:fs";
 import path from "node:path";
-import { PATTERN_API_DOC } from "@lightesota/shared";
+import { PATTERN_API_DOC } from "../../../shared/src/index.js";
 import { config } from "../config.js";
 import type { AppContext } from "./context.js";
-import { roleAllows } from "@lightesota/shared";
+import { roleAllows } from "../../../shared/src/index.js";
 
 export function createApp(ctx: AppContext) {
   const app = express();

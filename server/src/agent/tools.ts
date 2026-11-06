@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { findProfile, type ParamValues, type Rig, type Settings } from "@lightesota/shared";
+import { findProfile, type ParamValues, type Rig, type Settings } from "../../../shared/src/index.js";
 import type { Library } from "../library.js";
 import type { ShowController } from "../show.js";
 

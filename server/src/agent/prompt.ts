@@ -1,4 +1,4 @@
-import { PATTERN_API_DOC, findProfile, type Rig, type ShowState } from "@lightesota/shared";
+import { PATTERN_API_DOC, findProfile, type Rig, type ShowState } from "../../../shared/src/index.js";
 import type { Library } from "../library.js";
 
 export const STATIC_SYSTEM = `You are the lighting designer inside Lightesota, a web console that controls a small DMX + Hue light rig.
