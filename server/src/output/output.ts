@@ -1,4 +1,4 @@
-import { findProfile, type OutputStatus, type Rig, type Settings } from "../../../shared/src/index.js";
+import { findProfile, isLaserProfile, laserBytes, type LasersState, type OutputStatus, type Rig, type Settings } from "../../../shared/src/index.js";
 import type { Engine, EngineFrame } from "../engine/engine.js";
 import { OUT_STRIDE } from "../engine/sandbox.js";
 import { ArtNetListener, ArtNetSender } from "./artnet.js";
@@ -23,7 +23,7 @@ export class OutputManager {
   dmxSubscribers = 0;
   onDmx: ((universe: number, data: Uint8Array) => void) | null = null;
 
-  constructor(private engine: Engine, settings: Settings, rig: Rig) {
+  constructor(private engine: Engine, settings: Settings, rig: Rig, private getLasers: () => { lasers: LasersState; blackout: boolean }) {
     this.settings = settings;
     this.rig = rig;
     this.engine.on("frame", (f) => this.onFrame(f));
@@ -74,6 +74,7 @@ export class OutputManager {
     const buf = this.universe;
     if (upstream) buf.set(upstream); else buf.fill(0);
     if (this.plan) renderUniverse(this.rig, frame.fixtures, frame.values, u, this.plan, buf);
+    if (this.plan) this.writeLasers(u, buf);
     // Belt and braces: protected channels come only from upstream (or stay 0).
     if (this.plan) for (let c = 0; c < 512; c++) if (this.plan.protectedMask[c]) buf[c] = upstream ? upstream[c] : 0;
     if (this.sender) { this.sender.send(u, buf); this.countFps(); }
@@ -90,6 +91,25 @@ export class OutputManager {
         const v = frame.values;
         const w = v[o + 3];
         this.hue.setColor(f.hueLightId, Math.min(1, v[o] + w), Math.min(1, v[o + 1] + w), Math.min(1, v[o + 2] + w), v[o + 6]);
+      }
+    }
+  }
+
+  /**
+   * Lasers never go through the pattern engine. Their ten channels are built from the approved
+   * preset tables and the software arm; disarmed, blacked out or off encodes as all zeros.
+   */
+  private writeLasers(universe: number, buf: Uint8Array) {
+    const { lasers, blackout } = this.getLasers();
+    const blocked = new Set(this.plan!.blocked.map((b) => b.fixtureId));
+    for (const f of this.rig.fixtures) {
+      if (!f.enabled || (f.universe ?? 0) !== universe || !f.address || blocked.has(f.id)) continue;
+      const p = findProfile(f.profileId, this.rig.customProfiles);
+      if (!p || !isLaserProfile(p)) continue;
+      const bytes = laserBytes(lasers.fixtures[f.id], lasers.armed, blackout);
+      for (let c = 0; c < bytes.length; c++) {
+        const ch = f.address - 1 + c;
+        if (ch >= 0 && ch < 512 && !this.plan!.protectedMask[ch]) buf[ch] = bytes[c];
       }
     }
   }

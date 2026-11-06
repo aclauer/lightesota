@@ -45,15 +45,17 @@ JSON and JavaScript files.
 
 The server starts with the office rig from the lighting notes: four SlimPAR Pro H washes in 12CH
 at 101/113/125/137, two Saber Spot pinspots at 29/30 (not on the DMX chain yet, so they start
-disabled; enable them in the Stage editor once wired), Art-Net to 10.10.0.204 universe 0.
-Channels 31–52 (lasers, hazer) are protected and never written.
+disabled; enable them in the Stage editor once wired), two Scorpion Dual RGB ILS lasers at 31/41
+(see [Lasers](#lasers)), Art-Net to 10.10.0.204 universe 0. Channels 51–52 (hazer) are protected
+and never written.
 
 **Two senders share the ODE: Home Assistant and this app.** The ODE's ports are set to **HTP merge**
 (highest value wins per channel), which is what makes that work:
 
 - HA's frame is all zeros for the washes when its lights are off, so the app's values win there.
-- The app always sends 0 on the laser and hazer channels (31–52), so HA's gated values win there
-  and the laser safety logic in HA stays in charge.
+- The app sends 0 on the hazer channels (51–52), so HA's gated values win there. Laser channels
+  (31–50) are 0 whenever the app's lasers are disarmed, which is the normal state; see Lasers below
+  for what happens when both HA and the app have lasers enabled.
 - Either sender can stop without breaking the other. "Release output" in Settings stops the app's
   transmission entirely when HA alone should drive the rig.
 - While the app is lit, HA cannot force a wash darker than the app's level (HTP takes the maximum).
@@ -91,6 +93,31 @@ public URL in Settings.
 
 On iPhone, open the link in Safari and use Share → Add to Home Screen for a full-screen app.
 
+## Lasers
+
+The two Scorpion Dual lasers are fixtures in the rig, but they are not lights as far as the rest of
+the app is concerned: patterns never see them, the agent has no tool for them, overrides and flash
+skip them, and scenes do not store them. The only way light leaves a laser is the **Lasers** card on
+the Live tab, and it only speaks the preset vocabulary the laser operator approved on site:
+
+- **Manual**: fan (flat line) or wave (zigzag), one of six fixed colors, pan within 48–80. Tilt is
+  pinned at 64 (the level beam, the lowest approved angle), zoom at 53, strobe and rolling at 0.
+- **Sound**: the fixture's own sound-active modes (multicolor or one color); the laser picks its
+  patterns and positions itself, as approved for that mode.
+- Anything else, including every unknown value a client might send, encodes as all zeros, the
+  Scorpion's dark and still state.
+
+An admin must **arm** the lasers before any preset is emitted. The arm is in memory only: every
+server start comes up disarmed, "Release output" disarms, blackout holds the laser channels at zero
+while it is on, and the **All lasers off** button (anyone with control, so a guest can hit it) sets
+every laser to Off and disarms. The header shows a red "Lasers armed" badge for everyone while the
+rig is armed.
+
+Only the trained operator enables the lasers (guide Step 12.4). Physical power isolation is the stop;
+software off is not an interlock. If Home Assistant's own laser entities are enabled at the same
+time, the ODE's HTP merge takes the per-channel maximum of two approved frames, which is still an
+approved frame, but run one controller at a time anyway.
+
 ## Writing patterns
 
 A pattern is a small JavaScript module. The full reference is in the editor (API button) and in
@@ -116,13 +143,13 @@ pattern that hangs is disabled rather than freezing the show. Built-ins live in
 
 ## Safety rules this app keeps
 
-- Lasers (31–50) and the hazer (51–52) are protected channels. The output stage never writes them;
-  without an upstream frame they are held at 0, which is the Scorpion's dark state. The fixture
-  editor refuses addresses that overlap them.
+- The hazer (51–52) is a protected range. The output stage never writes it; without an upstream
+  frame it is held at 0. The fixture editor refuses addresses that overlap it.
+- Lasers are written only from the approved preset tables in `shared/src/laser.ts`, only while armed.
+  Do not add channel functions, widen the pan window or lower the tilt without the operator.
 - Software off is not an emergency stop. The ODE can hold its last frame. Physical power isolation
   is the stop.
-- The ODE merges HA and this app with HTP. Never send non-zero values on channels 31–52 from here;
-  that is what keeps HA's laser gating authoritative under HTP.
+- The ODE merges HA and this app with HTP. Never send non-zero values on channels 51–52 from here.
 - On shutdown (Ctrl-C) the server sends a few all-zero frames so the rig goes dark.
 
 ## Layout

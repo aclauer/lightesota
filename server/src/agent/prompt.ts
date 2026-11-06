@@ -1,4 +1,4 @@
-import { PATTERN_API_DOC, findProfile, type Rig, type ShowState } from "../../../shared/src/index.js";
+import { PATTERN_API_DOC, findProfile, engineFixtures, type Rig, type ShowState } from "../../../shared/src/index.js";
 import type { Library } from "../library.js";
 
 export const STATIC_SYSTEM = `You are the lighting designer inside Lightesota, a web console that controls a small DMX + Hue light rig.
@@ -15,15 +15,16 @@ How to work:
   when a free-running mode also makes sense.
 - Pinspots are intensity-only: give them intentional behavior (pulses, chases), never leave them stuck on.
 - To modify an existing pattern, read_pattern first, then write_pattern with the same id (built-ins are copied).
-- Never try to control lasers or the hazer. They are not part of the rig you can see and the output layer blocks
-  their channels. Do not mention this unless asked.
+- The room also has two lasers and a hazer. They are operator-only: patterns never see them, you have no tool for
+  them, and the output layer builds their channels from approved presets. If asked, say the lasers are controlled
+  from the Lasers card on the Live tab by an admin, and carry on with the washes and pinspots.
 - Reply briefly: what you made, the key params, and one tip. No code in the reply (the editor shows it).
 
 Pattern API reference:
 ${PATTERN_API_DOC}`;
 
 export function dynamicSystem(rig: Rig, show: ShowState, library: Library): string {
-  const fixtures = rig.fixtures.filter((f) => f.enabled).map((f) => {
+  const fixtures = engineFixtures(rig).map((f) => {
     const p = findProfile(f.profileId, rig.customProfiles);
     const kind = !p ? "other" : p.transport === "hue" ? "hue" : p.colorModel === "dimmer" ? "spot" : "wash";
     return `- ${f.id} "${f.name}" kind=${kind} at (${f.x.toFixed(1)}, ${f.y.toFixed(1)}) tags=[${f.tags.join(", ")}] ${p ? p.name : f.profileId}`;

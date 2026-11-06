@@ -61,6 +61,31 @@ export const BUILTIN_PROFILES: FixtureProfile[] = [
     notes: "Warm white pinspot. NO DMX = Blackout means it is dark without signal.",
   },
   {
+    id: "chauvet-scorpion-dual-rgb-ils-10ch",
+    name: "Chauvet Scorpion Dual RGB ILS (10-CH laser)",
+    manufacturer: "Chauvet DJ",
+    transport: "dmx",
+    colorModel: "rgb",
+    kind: "laser",
+    shape: "square",
+    size: 0.3,
+    // Address planning only. The output stage writes these ten channels from the approved laser
+    // presets (shared/src/laser.ts); patterns never touch them and "fixed 0" is the dark state.
+    channels: [
+      { fn: "fixed", name: "Mode", value: 0 },
+      { fn: "fixed", name: "Pattern", value: 0 },
+      { fn: "fixed", name: "Color", value: 0 },
+      { fn: "fixed", name: "Strobe", value: 0 },
+      { fn: "fixed", name: "Zoom", value: 0 },
+      { fn: "fixed", name: "Pan", value: 0 },
+      { fn: "fixed", name: "Tilt", value: 0 },
+      { fn: "fixed", name: "Rolling X", value: 0 },
+      { fn: "fixed", name: "Rolling Y", value: 0 },
+      { fn: "fixed", name: "Rolling Z", value: 0 },
+    ],
+    notes: "Operator-only. Menu: DMX address 031 / 041, never Auto, Sound, ILS, Slave or Test. Controlled from the Lasers card on Live after arming.",
+  },
+  {
     id: "generic-rgb-3ch",
     name: "Generic RGB (3-CH)",
     transport: "dmx",

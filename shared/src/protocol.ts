@@ -1,3 +1,4 @@
+import type { LaserState } from "./laser.js";
 import type {
   AudioFrame, DeviceInfo, FixtureOverride, FrameColor, OutputStatus, ParamValues, Pattern, PatternMeta, Playlist,
   Presence, Rig, Role, Scene, Settings, ShowState, HueLightInfo,
@@ -43,6 +44,12 @@ export type ClientMessage =
   | { type: "setOverride"; fixtureId: string; override: FixtureOverride | null }
   | { type: "clearOverrides" }
   | { type: "setSolo"; fixtureIds: string[] }
+  /** Arm/disarm the lasers (admin). */
+  | { type: "armLasers"; armed: boolean }
+  /** Change one laser's preset (admin). Partial; invalid values are ignored. */
+  | { type: "setLaser"; fixtureId: string; state: Partial<LaserState> }
+  /** Everything off and disarmed. Anyone with control can do this. */
+  | { type: "lasersOff" }
   | { type: "setReleased"; released: boolean }
   | { type: "recallScene"; sceneId: string; crossfadeMs?: number }
   | { type: "saveScene"; name: string; sceneId?: string }
@@ -80,7 +87,7 @@ export function requiredRole(msg: ClientMessage): Role {
     case "setCrossfade": case "setBpm": case "tap": case "resync": case "nudge":
     case "setOverride": case "clearOverrides": case "setSolo": case "recallScene":
     case "playPlaylist": case "stopPlaylist": case "playlistNext": case "playlistPrev":
-    case "testFixture": case "audio": case "setFollowMicBpm": case "setSleep":
+    case "testFixture": case "audio": case "setFollowMicBpm": case "setSleep": case "lasersOff":
       return "guest";
     case "agent":
       return "guest"; // guests are further gated by settings.agent.guestAccess and rate limits

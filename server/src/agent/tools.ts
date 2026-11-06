@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { findProfile, type ParamValues, type Rig, type Settings } from "../../../shared/src/index.js";
+import { engineFixtures, findProfile, type ParamValues, type Rig, type Settings } from "../../../shared/src/index.js";
 import type { Library } from "../library.js";
 import type { ShowController } from "../show.js";
 
@@ -117,7 +117,7 @@ export function runTool(host: AgentHost, name: string, rawInput: unknown): strin
       const rig = host.getRig();
       return JSON.stringify({
         room: rig.room,
-        fixtures: rig.fixtures.filter((f) => f.enabled).map((f) => {
+        fixtures: engineFixtures(rig).map((f) => {
           const p = findProfile(f.profileId, rig.customProfiles);
           return { id: f.id, name: f.name, kind: !p ? "other" : p.transport === "hue" ? "hue" : p.colorModel === "dimmer" ? "spot" : "wash", x: f.x, y: f.y, tags: f.tags, profile: p?.name };
         }),

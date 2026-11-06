@@ -8,7 +8,7 @@ import type { AppContext } from "./api/context.js";
 import { createApp } from "./api/http.js";
 import { WsHub } from "./api/ws.js";
 import { config, ensureDataDirs } from "./config.js";
-import { defaultRig, defaultSettings } from "./defaults.js";
+import { defaultRig, defaultSettings, migrateRig } from "./defaults.js";
 import { Library } from "./library.js";
 import { OutputManager } from "./output/output.js";
 import { ShowController } from "./show.js";
@@ -17,11 +17,15 @@ import { deepMerge, JsonFile } from "./store.js";
 ensureDataDirs();
 
 const rigFile = new JsonFile<Rig>("rig.json", defaultRig);
+{
+  const m = migrateRig(rigFile.get());
+  if (m.changed) { rigFile.set(m.rig); console.log("[rig] lasers added as fixtures (were protected ranges); they start disarmed"); }
+}
 const settingsFile = new JsonFile<Settings>("settings.json", defaultSettings, (raw) => deepMerge(defaultSettings(), raw));
 const library = new Library();
 library.load();
 const show = new ShowController(library, () => rigFile.get(), () => settingsFile.get());
-const output = new OutputManager(show.engine, settingsFile.get(), rigFile.get());
+const output = new OutputManager(show.engine, settingsFile.get(), rigFile.get(), () => ({ lasers: show.state.lasers, blackout: show.state.blackout }));
 const auth = new Auth(() => settingsFile.get());
 const devices = new DeviceStore();
 

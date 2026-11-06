@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useEffect, useState as useStateReact } from "react";
 import { Code2, Flashlight, Mic, MicOff, Moon, RotateCcw, Save, X } from "lucide-react";
-import { findProfile, type FixtureOverride } from "@lightesota/shared";
+import { findProfile, engineFixtures, isLaserProfile, type FixtureOverride } from "@lightesota/shared";
+import { LasersCard } from "../components/LasersCard";
 import { useStore } from "../state/store";
 import { Stage } from "../components/Stage";
 import { ParamControls } from "../components/ParamControls";
@@ -88,6 +89,7 @@ export function LiveView() {
           )}
         </div>
         <SoundCard />
+        <LasersCard />
         {scenes.length > 0 && (
           <div className="card">
             <h3>Scenes</h3>
@@ -229,11 +231,22 @@ function FixtureInspector({ id, onClose }: { id: string; onClose: () => void }) 
   if (!f) return null;
   const control = can("guest");
   const profile = findProfile(f.profileId, rig.customProfiles);
-  const idx = rig.fixtures.filter((x) => x.enabled).indexOf(f);
+  const idx = engineFixtures(rig).indexOf(f);
   const c = idx >= 0 ? frame[idx] : undefined;
   const ov: FixtureOverride | undefined = show.overrides[f.id];
   const soloed = show.solo.includes(f.id);
   const isColor = profile?.colorModel !== "dimmer";
+  if (isLaserProfile(profile)) {
+    return (
+      <div className="card fixture-inspector">
+        <div className="row" style={{ justifyContent: "space-between", marginBottom: 6 }}>
+          <div><h2 style={{ marginBottom: 0 }}>{f.name}</h2><div className="hint">{profile?.name ?? f.profileId}{f.address ? ` · DMX ${f.address}` : ""}</div></div>
+          <button className="btn ghost icon sm" onClick={onClose} aria-label="Close"><X /></button>
+        </div>
+        <p className="hint">Operator-only fixture. Patterns, overrides and flash never touch it; use the Lasers card below.</p>
+      </div>
+    );
+  }
   const setOv = (patch: Partial<FixtureOverride> | null) => send({ type: "setOverride", fixtureId: f.id, override: patch === null ? null : { ...ov, ...patch } });
   return (
     <div className="card fixture-inspector">

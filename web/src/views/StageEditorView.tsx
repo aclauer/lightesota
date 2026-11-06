@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Copy, Flashlight, Plus, Trash2 } from "lucide-react";
-import { BUILTIN_PROFILES, findProfile, type Fixture, type Rig } from "@lightesota/shared";
+import { BUILTIN_PROFILES, findProfile, isLaserProfile, type Fixture, type Rig } from "@lightesota/shared";
 import { useStore } from "../state/store";
 import { Stage } from "../components/Stage";
 
@@ -29,7 +29,7 @@ export function StageEditorView() {
     while (p.transport === "dmx" && [...Array(p.channels.length).keys()].some((c) => used.has(addr + c)) && addr < 512) addr++;
     const n = r.fixtures.length + 1;
     const id = `f${Date.now().toString(36)}`;
-    const fx: Fixture = { id, name: `${p.colorModel === "dimmer" ? "Spot" : p.transport === "hue" ? "Hue" : "Wash"} ${n}`, profileId, universe: p.transport === "dmx" ? (settings?.artnet.universe ?? 0) : undefined, address: p.transport === "dmx" ? addr : undefined, x: Math.round(r.room.width / 2 * 2) / 2, y: Math.round(r.room.height / 2 * 2) / 2, rotation: 0, tags: [p.colorModel === "dimmer" ? "spot" : p.transport === "hue" ? "hue" : "wash"], enabled: true };
+    const fx: Fixture = { id, name: `${isLaserProfile(p) ? "Laser" : p.colorModel === "dimmer" ? "Spot" : p.transport === "hue" ? "Hue" : "Wash"} ${n}`, profileId, universe: p.transport === "dmx" ? (settings?.artnet.universe ?? 0) : undefined, address: p.transport === "dmx" ? addr : undefined, x: Math.round(r.room.width / 2 * 2) / 2, y: Math.round(r.room.height / 2 * 2) / 2, rotation: 0, tags: [p.colorModel === "dimmer" ? "spot" : p.transport === "hue" ? "hue" : "wash"], enabled: true };
     commit({ ...r, fixtures: [...r.fixtures, fx] });
     selectFixture(id);
   };

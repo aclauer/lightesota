@@ -1,6 +1,6 @@
 import type { Rig, Settings } from "../../shared/src/index.js";
 
-/** The office rig as wired on 2026-11-05 (washes in 12CH at 101/113/125/137). */
+/** The office rig as wired on 2026-11-05 (washes in 12CH at 101/113/125/137, lasers at 31/41). */
 export function defaultRig(): Rig {
   const wash = (n: number, address: number, x: number, y: number, tags: string[]) => ({
     id: `w${n}`, name: `Wash ${n}`, profileId: "chauvet-slimpar-pro-h-12ch",
@@ -10,6 +10,12 @@ export function defaultRig(): Rig {
   const spot = (n: number, address: number, x: number, y: number, tags: string[]) => ({
     id: `s${n}`, name: `Spot ${n}`, profileId: "chauvet-saber-spot-ww-1ch",
     universe: 0, address, x, y, rotation: 0, tags: ["spot", ...tags], enabled: false,
+  });
+  // Scorpion Dual lasers on the Port 1 chain. Enabled means "addressable"; they emit nothing
+  // until an admin arms them on the Live tab (see shared/src/laser.ts).
+  const laser = (n: number, address: number, x: number, y: number, tags: string[]) => ({
+    id: `l${n}`, name: `Laser ${n}`, profileId: "chauvet-scorpion-dual-rgb-ils-10ch",
+    universe: 0, address, x, y, rotation: 0, tags: ["laser", ...tags], enabled: true,
   });
   return {
     room: {
@@ -29,14 +35,35 @@ export function defaultRig(): Rig {
       wash(4, 137, 9.0, 7.0, ["right", "back"]),
       spot(1, 29, 4.0, 4.0, ["left", "center"]),
       spot(2, 30, 6.0, 4.0, ["right", "center"]),
+      laser(1, 31, 3.5, 0.6, ["left", "front"]),
+      laser(2, 41, 6.5, 0.6, ["right", "front"]),
     ],
     customProfiles: [],
     protectedRanges: [
-      { universe: 0, from: 31, to: 40, reason: "Laser 1 (operator only)" },
-      { universe: 0, from: 41, to: 50, reason: "Laser 2 (operator only)" },
       { universe: 0, from: 51, to: 52, reason: "Hazer (no software control)" },
     ],
   };
+}
+
+/**
+ * One-time migration for rigs saved before the lasers were commissioned: the two laser ranges
+ * were protected and there were no laser fixtures. Turns each range into a laser fixture.
+ */
+export function migrateRig(rig: Rig): { rig: Rig; changed: boolean } {
+  const hasLaser = rig.fixtures.some((f) => f.profileId === "chauvet-scorpion-dual-rgb-ils-10ch");
+  const laserRanges = rig.protectedRanges.filter((r) => /laser/i.test(r.reason) && r.to - r.from === 9);
+  if (hasLaser || laserRanges.length === 0) return { rig, changed: false };
+  const def = defaultRig();
+  const fixtures = [...rig.fixtures];
+  for (const [i, r] of laserRanges.entries()) {
+    const n = i + 1;
+    const d = def.fixtures.find((f) => f.id === `l${n}`);
+    fixtures.push({
+      id: `l${n}`, name: `Laser ${n}`, profileId: "chauvet-scorpion-dual-rgb-ils-10ch",
+      universe: r.universe, address: r.from, x: d?.x ?? 3 * n, y: d?.y ?? 0.6, rotation: 0, tags: ["laser"], enabled: true,
+    });
+  }
+  return { rig: { ...rig, fixtures, protectedRanges: rig.protectedRanges.filter((r) => !laserRanges.includes(r)) }, changed: true };
 }
 
 export function defaultSettings(): Settings {

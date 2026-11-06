@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Moon, Power, Share2, Sun, SunMoon, Users } from "lucide-react";
+import { AlertTriangle, Moon, Power, Share2, Sun, SunMoon, Users } from "lucide-react";
 import { useStore } from "../state/store";
 import { ShareModal } from "./ShareModal";
 import { PresenceModal } from "./PresenceModal";
@@ -27,6 +27,7 @@ export function Header() {
         <span>Lightesota</span>
         {settings?.sharing.venueName && <span className="venue">· {settings.sharing.venueName}</span>}
       </div>
+      {show?.lasers.armed && <span className="pill danger laser-armed" title={`Lasers armed${show.lasers.armedBy ? ` by ${show.lasers.armedBy}` : ""}`}><AlertTriangle /> <span className="hide-mobile">Lasers armed</span></span>}
       <div className="spacer" />
       <Transport />
       <div className="master hide-mobile" title="Master intensity">

@@ -345,3 +345,17 @@ table.tbl th { font-size: 11px; color: var(--fg-3); text-transform: uppercase; l
   .pip-visible .agent .msgs, .pip-visible .agent .composer, .pip-visible .agent .suggestions { padding-right: 330px; }
 }
 @media (max-width: 1099px) { .view-agent .pip { display: none; } }
+
+/* Lasers */
+.pill.danger svg, .lasers .pill svg { width: 12px; height: 12px; vertical-align: -2px; }
+.laser-armed { display: inline-flex; align-items: center; gap: 5px; margin-left: 10px; animation: laser-pulse 1.6s ease-in-out infinite; }
+@keyframes laser-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.switch.danger.on { background: var(--danger); }
+.switch.danger.on::after { background: #fff; }
+.card.lasers.armed { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger) inset; }
+.laser-row { padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); }
+.laser-row .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+.swatch-btn { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; padding: 0; cursor: pointer; }
+.swatch-btn.active { border-color: var(--fg); box-shadow: 0 0 0 2px var(--surface-2); }
+.swatch-btn:disabled { cursor: default; opacity: 0.7; }
+.chips { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { findProfile, type Fixture, type Rig } from "@lightesota/shared";
+import { findProfile, engineFixtures, isLaserProfile, laserCss, laserIsOn, type Fixture, type Rig } from "@lightesota/shared";
 import { useStore } from "../state/store";
 import { frameToCss, frameLuma } from "../lib/format";
 
@@ -59,8 +59,10 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
       const ctx = canvas.getContext("2d")!;
       const s = state.current;
       const { rig, mode, selectedId, showLabels, live, compact } = propsRef.current;
-      const frame = useStore.getState().frame;
-      const enabled = rig.fixtures.filter((f) => f.enabled);
+      const { frame, show } = useStore.getState();
+      const enabled = engineFixtures(rig);
+      const lasers = show?.lasers;
+      const blackout = !!show?.blackout;
       const css = getComputedStyle(canvas);
       const fg = css.getPropertyValue("--fg").trim(), fg3 = css.getPropertyValue("--fg-3").trim(), line = css.getPropertyValue("--line").trim(), accent = css.getPropertyValue("--accent").trim(), surface = css.getPropertyValue("--surface").trim(), bg = css.getPropertyValue("--bg").trim();
       const isDark = (css.getPropertyValue("color-scheme").trim() || "dark") === "dark";
@@ -96,6 +98,33 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
           ctx.fillStyle = fg3; ctx.font = '11px "Manrope Variable", system-ui'; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(sh.text, X(sh.x), Y(sh.y));
         }
       }
+      // Laser fans: drawn under everything so the beam reads as light on the floor.
+      if (live && lasers) {
+        for (const f of rig.fixtures) {
+          const p = findProfile(f.profileId, rig.customProfiles);
+          if (!f.enabled || !isLaserProfile(p)) continue;
+          const st = lasers.fixtures[f.id];
+          if (!laserIsOn(st, lasers.armed, blackout)) continue;
+          const col = laserCss(st);
+          const cx = X(f.x), cy = Y(f.y);
+          const len = Math.max(rig.room.width, rig.room.height) * s.scale;
+          const dir = (f.rotation + 90) * Math.PI / 180; // rotation 0 = beam toward +y (into the room)
+          const panOff = st?.mode === "manual" ? ((st.pan - 64) / 16) * 0.35 : 0;
+          const spread = st?.mode === "music" ? 0.9 : st?.pattern === "wave" ? 0.7 : 0.6;
+          ctx.save();
+          ctx.translate(cx, cy); ctx.rotate(dir + panOff);
+          const g = ctx.createLinearGradient(0, 0, len, 0);
+          g.addColorStop(0, hexA(col, 0.45));
+          g.addColorStop(1, hexA(col, 0));
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(len * Math.cos(-spread / 2), len * Math.sin(-spread / 2)); ctx.lineTo(len * Math.cos(spread / 2), len * Math.sin(spread / 2)); ctx.closePath(); ctx.fill();
+          // A few beam lines so it reads as a laser rather than a wash.
+          ctx.strokeStyle = hexA(col, 0.8); ctx.lineWidth = 1;
+          const n = st?.mode === "music" ? 9 : 7;
+          for (let i = 0; i < n; i++) { const a = -spread / 2 + (spread * i) / (n - 1); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(len * 0.9 * Math.cos(a), len * 0.9 * Math.sin(a)); ctx.stroke(); }
+          ctx.restore();
+        }
+      }
       // Glows first (live)
       if (live) {
         for (let i = 0; i < enabled.length; i++) {
@@ -125,16 +154,22 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
         const cx = X(f.x), cy = Y(f.y);
         ctx.save();
         ctx.translate(cx, cy); ctx.rotate((f.rotation * Math.PI) / 180);
-        const fill = !f.enabled ? "#2a2c33" : c ? frameToCss(c) : (isDark ? surface : "#1f2129");
+        const laser = isLaserProfile(p);
+        const lst = laser ? lasers?.fixtures[f.id] : undefined;
+        const laserOn = laser && !!lasers && laserIsOn(lst, lasers.armed, blackout);
+        const fill = !f.enabled ? "#2a2c33" : laser ? (laserOn ? laserCss(lst) : (lasers?.armed ? "#5a1d1d" : "#2a2c33")) : c ? frameToCss(c) : (isDark ? surface : "#1f2129");
         ctx.fillStyle = fill;
         ctx.strokeStyle = f.id === selectedId ? accent : s.hover === f.id ? fg : fg3;
         ctx.lineWidth = f.id === selectedId ? 3 : 1.5;
         ctx.beginPath();
-        if (p?.shape === "square") ctx.rect(-r, -r, r * 2, r * 2);
+        if (laser) { ctx.moveTo(0, -r); ctx.lineTo(r, 0); ctx.lineTo(0, r); ctx.lineTo(-r, 0); ctx.closePath(); }
+        else if (p?.shape === "square") ctx.rect(-r, -r, r * 2, r * 2);
         else if (p?.shape === "bar") ctx.rect(-r * 2.2, -r * 0.45, r * 4.4, r * 0.9);
         else ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.fill(); ctx.stroke();
-        if (p?.shape !== "bar") { // direction tick
+        if (laser && f.enabled) { // laser warning tick
+          ctx.strokeStyle = laserOn ? fill : fg3; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, r); ctx.lineTo(0, r + 6); ctx.stroke();
+        } else if (p?.shape !== "bar") { // direction tick
           ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(0, -r - 5); ctx.strokeStyle = fg3; ctx.lineWidth = 1.5; ctx.stroke();
         }
         if (!f.enabled) { ctx.strokeStyle = fg3; ctx.beginPath(); ctx.moveTo(-r, -r); ctx.lineTo(r, r); ctx.stroke(); }
@@ -198,4 +233,10 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
     s.drag = null; s.pan = null;
   };
   return <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} aria-label="Room plan" />;
+}
+
+/** "#rrggbb" + alpha -> rgba(). */
+function hexA(hex: string, a: number) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }

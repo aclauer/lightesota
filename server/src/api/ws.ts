@@ -1,7 +1,7 @@
 import type { Server } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { nanoid } from "nanoid";
-import {
+import { type LaserState,
   requiredRole, roleAllows, type ClientMessage, type Presence, type Role, type ServerMessage, type Rig, type Settings,
 } from "../../../shared/src/index.js";
 import { deepMerge } from "../store.js";
@@ -180,6 +180,9 @@ export class WsHub {
       case "setOverride": show.setOverride(msg.fixtureId, msg.override); return;
       case "clearOverrides": show.clearOverrides(); return;
       case "setSolo": show.setSolo(msg.fixtureIds); return;
+      case "armLasers": show.armLasers(!!msg.armed, client.name || "admin"); return;
+      case "setLaser": show.setLaser(String(msg.fixtureId), (msg.state ?? {}) as Partial<LaserState>); return;
+      case "lasersOff": show.lasersOff(client.name || "someone"); return;
       case "setReleased": show.setReleased(!!msg.released); ctx.output.released = !!msg.released; return;
       case "recallScene": show.recallScene(msg.sceneId, msg.crossfadeMs, client.name); return;
       case "saveScene": return show.captureScene(msg.name, msg.sceneId);

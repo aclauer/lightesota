@@ -1,3 +1,4 @@
+import type { LasersState } from "./laser.js";
 // Core domain types shared between server and web.
 
 export type Role = "admin" | "editor" | "guest" | "viewer";
@@ -26,6 +27,11 @@ export interface FixtureProfile {
   channels: ProfileChannel[];
   /** Whether the fixture produces color or is intensity-only. */
   colorModel: "rgb" | "rgbw" | "rgbaw-uv" | "dimmer";
+  /**
+   * "laser": not driven by patterns at all. Output comes only from the operator-approved preset
+   * vocabulary in laser.ts, gated by the software arm. `channels` is only used for address planning.
+   */
+  kind?: "light" | "laser";
   /** Default drawing size on the stage (meters). */
   size?: number;
   shape?: "circle" | "square" | "bar";
@@ -194,6 +200,8 @@ export interface ShowState {
   sleepAt: number | null;
   /** Microphone analysis: who is sending and whether BPM follows the detected tempo. */
   audio: { active: boolean; source: string | null; followBpm: boolean; level: number; bpm: number | null };
+  /** Laser arm and per-laser presets. Never persisted: a restart always comes up disarmed. */
+  lasers: LasersState;
 }
 
 /** One microphone analysis frame sent by a browser. All 0..1 except bpm. */

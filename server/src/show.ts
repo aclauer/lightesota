@@ -1,8 +1,8 @@
 import { EventEmitter } from "node:events";
 import { nanoid } from "nanoid";
 import {
-  defaultParams, sanitizeParams,
-  type AudioFrame, type FixtureOverride, type ParamValues, type Rig, type Scene, type Settings, type ShowState, type Playlist,
+  defaultParams, sanitizeParams, defaultLasersState, defaultLaserState, sanitizeLaserState, laserFixtures,
+  type AudioFrame, type LaserState, type FixtureOverride, type ParamValues, type Rig, type Scene, type Settings, type ShowState, type Playlist,
 } from "../../shared/src/index.js";
 import { Engine } from "./engine/engine.js";
 import type { Library } from "./library.js";
@@ -29,6 +29,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
       transport: { bpm: 120, beatOrigin: Date.now(), running: true },
       overrides: {}, solo: [], activeSceneId: null, playlist: null, released: false,
       sleepAt: null, audio: { active: false, source: null, followBpm: false, level: 0, bpm: null },
+      lasers: defaultLasersState(),
     };
     this.state = {
       ...base,
@@ -40,6 +41,8 @@ export class ShowController extends EventEmitter<ShowEvents> {
       sleepAt: null,
       audio: { active: false, source: null, followBpm: saved.audio?.followBpm ?? false, level: 0, bpm: null },
       history: Array.isArray(saved.history) ? saved.history.filter((h) => h && typeof h.patternId === "string").slice(0, 12) : [],
+      // Lasers always come up disarmed and off, whatever was saved.
+      lasers: defaultLasersState(),
     };
     setInterval(() => this.audioTick(), 500).unref();
     this.engine.on("patternLoaded", ({ id, params }) => {
@@ -198,7 +201,35 @@ export class ShowController extends EventEmitter<ShowEvents> {
   setBlackout(b: boolean) { this.state.blackout = b; this.engine.blackout = b; this.changed(); }
   setSpeed(v: number) { this.state.speed = Math.max(0, Math.min(4, v)); this.engine.speed = this.state.speed; this.changed(); }
   setCrossfade(ms: number) { this.state.crossfadeMs = Math.max(0, Math.min(20000, ms)); this.changed(); }
-  setReleased(r: boolean) { this.state.released = r; this.changed(); }
+  setReleased(r: boolean) { this.state.released = r; if (r) this.lasersOff("release"); this.changed(); }
+
+  // ---- lasers (operator-approved presets only; see shared/src/laser.ts) ----
+  armLasers(armed: boolean, by: string) {
+    const L = this.state.lasers;
+    if (armed && !L.armed) {
+      if (laserFixtures(this.getRig()).length === 0) throw new Error("No enabled laser fixtures in the rig");
+      L.armed = true; L.armedAt = Date.now(); L.armedBy = by || "admin";
+      this.emit("toast", { level: "warning", text: `Lasers armed by ${L.armedBy}` });
+    } else if (!armed && L.armed) {
+      this.lasersOff(by);
+    }
+    this.changed();
+  }
+  setLaser(fixtureId: string, patch: Partial<LaserState>) {
+    if (!laserFixtures(this.getRig()).some((f) => f.id === fixtureId)) throw new Error("Not an enabled laser fixture");
+    const prev = this.state.lasers.fixtures[fixtureId] ?? defaultLaserState();
+    this.state.lasers.fixtures[fixtureId] = sanitizeLaserState({ ...prev, ...patch }, prev);
+    this.changed();
+  }
+  /** Every laser to its dark state and the arm dropped. */
+  lasersOff(by: string) {
+    const L = this.state.lasers;
+    const wasArmed = L.armed;
+    for (const id of Object.keys(L.fixtures)) L.fixtures[id] = { ...L.fixtures[id], mode: "off" };
+    L.armed = false; L.armedAt = null; L.armedBy = null;
+    if (wasArmed) this.emit("toast", { level: "info", text: `Lasers off (${by || "control"})` });
+    this.changed();
+  }
 
   // ---- transport ----
   setBpm(bpm: number) { this.engine.setBpm(bpm); this.changed(); }
