@@ -42,7 +42,8 @@ JSON and JavaScript files.
 ## First run against the real rig
 
 The server starts with the office rig from the lighting notes: four SlimPAR Pro H washes in 12CH
-at 101/113/125/137, two Saber Spot pinspots at 29/30, Art-Net to 10.10.0.204 universe 0.
+at 101/113/125/137, two Saber Spot pinspots at 29/30 (not on the DMX chain yet, so they start
+disabled; enable them in the Stage editor once wired), Art-Net to 10.10.0.204 universe 0.
 Channels 31–52 (lasers, hazer) are protected and never written.
 
 **Only one Art-Net sender may talk to the ODE** (it is set to Merge None). Home Assistant currently

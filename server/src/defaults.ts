@@ -6,9 +6,10 @@ export function defaultRig(): Rig {
     id: `w${n}`, name: `Wash ${n}`, profileId: "chauvet-slimpar-pro-h-12ch",
     universe: 0, address, x, y, rotation: 0, tags: ["wash", ...tags], enabled: true,
   });
+  // The pinspots are addressed (29/30) but not yet on the DMX chain, so they start disabled.
   const spot = (n: number, address: number, x: number, y: number, tags: string[]) => ({
     id: `s${n}`, name: `Spot ${n}`, profileId: "chauvet-saber-spot-ww-1ch",
-    universe: 0, address, x, y, rotation: 0, tags: ["spot", ...tags], enabled: true,
+    universe: 0, address, x, y, rotation: 0, tags: ["spot", ...tags], enabled: false,
   });
   return {
     room: {

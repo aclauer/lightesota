@@ -51,7 +51,8 @@ test("write_pattern surfaces compile errors as thrown errors", () => {
 test("get_rig hides nothing about lasers but exposes only enabled fixtures", () => {
   const host = makeHost();
   const r = JSON.parse(runTool(host, "get_rig", {}));
-  assert.equal(r.fixtures.length, 6);
-  assert.ok(r.fixtures.every((f: { kind: string }) => f.kind === "wash" || f.kind === "spot"));
+  // Pinspots start disabled (not wired yet), so only the four washes are visible to the agent.
+  assert.equal(r.fixtures.length, 4);
+  assert.ok(r.fixtures.every((f: { kind: string }) => f.kind === "wash"));
   host.show.engine.stop();
 });

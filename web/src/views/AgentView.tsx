@@ -56,7 +56,7 @@ export function AgentView() {
           {!conv || conv.messages.length === 0 ? (
             <div className="stack" style={{ maxWidth: 640 }}>
               <div className="row"><Bot /> <h2 style={{ fontSize: 16 }}>Describe a look and the agent will write and apply it</h2></div>
-              <p className="muted">It knows the rig: four color washes in the corners and two warm pinspots in the middle. It writes a pattern, test-renders it, applies it, and exposes the tunable parts as sliders on the Live tab. Ask for changes in plain language.</p>
+              <p className="muted">It knows the rig (the enabled fixtures on the Stage tab). It writes a pattern, test-renders it, applies it, and exposes the tunable parts as sliders on the Live tab. Ask for changes in plain language.</p>
               <p className="hint">Model: {settings?.agent.model} · effort {settings?.agent.effort} (change in Settings)</p>
             </div>
           ) : conv.messages.map((m) => <Message key={m.id} m={m} />)}
