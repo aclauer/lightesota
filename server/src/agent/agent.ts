@@ -98,16 +98,20 @@ export class AgentService {
         conv.messages.push(assistant);
         this.broadcast({ type: "message", conversationId: conv.id, message: assistant });
 
+        // Live rig/show state goes in as a mid-conversation system message that stays in the
+        // history (append-only). The top-level system prompt must never change between turns:
+        // the model's thinking blocks are bound to it and the API rejects a mismatch.
+        conv.history.push({ role: "system", content: dynamicSystem(this.host.getRig(), this.host.show.state, this.host.library) });
+
         const stream = client.beta.messages.stream({
           model: settings.model,
           max_tokens: 32000,
-          betas: useFallbacks ? ["server-side-fallback-2026-06-01"] : [],
+          betas: ["thinking-binding-controls-2026-08-01", ...(useFallbacks ? ["server-side-fallback-2026-06-01" as const] : [])],
           ...(useFallbacks ? { fallbacks: [{ model: "claude-opus-4-8" }] } : {}),
+          // Older conversations may hold thinking blocks bound to a previous prompt; drop them instead of failing.
+          thinking: { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } } as unknown as Anthropic.Beta.Messages.BetaThinkingConfigParam,
           output_config: { effort: settings.effort },
-          system: [
-            { type: "text", text: STATIC_SYSTEM, cache_control: { type: "ephemeral" } },
-            { type: "text", text: dynamicSystem(this.host.getRig(), this.host.show.state, this.host.library) },
-          ],
+          system: [{ type: "text", text: STATIC_SYSTEM, cache_control: { type: "ephemeral" } }],
           tools: TOOL_DEFS,
           messages: conv.history,
         }, { signal: abort.signal });
@@ -180,9 +184,13 @@ export class AgentService {
         : e instanceof Anthropic.APIError ? `Anthropic API error ${e.status}: ${e.message}`
         : (e as Error).message;
       if (last?.role === "assistant") last.error = msg; else conv.messages.push({ id: nanoid(8), role: "assistant", text: "", toolCalls: [], createdAt: Date.now(), error: msg });
-      // Remove any dangling tool_use without results so the next turn is valid.
-      const lastHist = conv.history[conv.history.length - 1];
-      if (lastHist?.role === "assistant" && Array.isArray(lastHist.content) && lastHist.content.some((b) => b.type === "tool_use")) conv.history.pop();
+      // Remove any dangling tool_use without results, and a trailing state message, so the next turn is valid.
+      while (conv.history.length) {
+        const last = conv.history[conv.history.length - 1];
+        if (last.role === "system") { conv.history.pop(); continue; }
+        if (last.role === "assistant" && Array.isArray(last.content) && last.content.some((b) => b.type === "tool_use")) { conv.history.pop(); continue; }
+        break;
+      }
     } finally {
       this.running.delete(conv.id);
       for (const m of conv.messages) m.streaming = false;
