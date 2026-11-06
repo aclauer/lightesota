@@ -82,7 +82,7 @@ function Transport() {
   const onPointerDown = (e: React.PointerEvent) => {
     if (!control) return;
     drag.current = { y: e.clientY, bpm };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
   };
   const onPointerMove = (e: React.PointerEvent) => {
     if (!drag.current) return;

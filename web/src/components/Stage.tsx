@@ -171,7 +171,7 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
   const onPointerDown = (e: React.PointerEvent) => {
     const { x, y } = local(e); const s = state.current; const { mode, onSelect } = propsRef.current;
     const f = hit(x, y);
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
     if (f) {
       onSelect?.(f.id);
       if (mode === "edit") s.drag = { id: f.id, dx: x - (s.ox + f.x * s.scale), dy: y - (s.oy + f.y * s.scale), moved: false };
