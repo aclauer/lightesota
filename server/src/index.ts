@@ -3,6 +3,7 @@ import os from "node:os";
 import type { Rig, Settings } from "../../shared/src/index.js";
 import { AgentService } from "./agent/agent.js";
 import { Auth } from "./api/auth.js";
+import { DeviceStore } from "./api/devices.js";
 import type { AppContext } from "./api/context.js";
 import { createApp } from "./api/http.js";
 import { WsHub } from "./api/ws.js";
@@ -22,6 +23,7 @@ library.load();
 const show = new ShowController(library, () => rigFile.get(), () => settingsFile.get());
 const output = new OutputManager(show.engine, settingsFile.get(), rigFile.get());
 const auth = new Auth(() => settingsFile.get());
+const devices = new DeviceStore();
 
 let hub: WsHub;
 const agent = new AgentService(
@@ -34,7 +36,7 @@ const agent = new AgentService(
 );
 
 const ctx: AppContext = {
-  library, show, output, rigFile, settingsFile, auth, agent,
+  library, show, output, rigFile, settingsFile, auth, agent, devices,
   applyConfig: () => {
     output.apply(settingsFile.get(), rigFile.get());
     show.rigChanged();

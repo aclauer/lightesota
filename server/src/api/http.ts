@@ -4,12 +4,22 @@ import path from "node:path";
 import { PATTERN_API_DOC } from "../../../shared/src/index.js";
 import { config } from "../config.js";
 import type { AppContext } from "./context.js";
+import { parseCookies } from "./auth.js";
+import { DEVICE_COOKIE, newDeviceId } from "./devices.js";
 import { roleAllows } from "../../../shared/src/index.js";
 
 export function createApp(ctx: AppContext) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "5mb" }));
+
+  // Every browser gets a stable device id cookie; it keys rate limits, names and attribution.
+  app.use((req, res, next) => {
+    if (!parseCookies(req.headers.cookie)[DEVICE_COOKIE] && !req.path.startsWith("/api") && !req.path.startsWith("/assets")) {
+      res.cookie(DEVICE_COOKIE, newDeviceId(), { httpOnly: false, sameSite: "lax", maxAge: 400 * 24 * 3600 * 1000, path: "/" });
+    }
+    next();
+  });
 
   // Share links: /join/<token> or /?t=<token> set a cookie and land on the app.
   app.get("/join/:token", (req, res) => {

@@ -97,6 +97,7 @@ function renderMd(text: string) {
 function Message({ m }: { m: AgentChatMessage }) {
   return (
     <div className={`msg ${m.role}`}>
+      {m.role === "user" && m.by && <span className="hint" style={{ textAlign: "right" }}>{m.by}</span>}
       {m.toolCalls.map((c) => <ToolCall key={c.id} c={c} />)}
       {(m.text || m.streaming) && <div className="bubble" style={{ whiteSpace: "normal" }}>{m.role === "assistant" ? renderMd(m.text) : m.text}{m.streaming && !m.text && <Loader2 className="spin" style={{ width: 14, height: 14, verticalAlign: "middle" }} />}</div>}
       {m.error && <div className="err">{m.error}</div>}

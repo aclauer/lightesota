@@ -1,11 +1,12 @@
 import type {
-  AudioFrame, FixtureOverride, FrameColor, OutputStatus, ParamValues, Pattern, PatternMeta, Playlist,
+  AudioFrame, DeviceInfo, FixtureOverride, FrameColor, OutputStatus, ParamValues, Pattern, PatternMeta, Playlist,
   Presence, Rig, Role, Scene, Settings, ShowState, HueLightInfo,
 } from "./types.js";
 
 /** Messages the server pushes to clients. */
 export type ServerMessage =
-  | { type: "hello"; clientId: string; role: Role; serverTime: number; name: string }
+  | { type: "hello"; clientId: string; deviceId: string; role: Role; serverTime: number; name: string }
+  | { type: "devices"; devices: DeviceInfo[] }
   | { type: "snapshot"; rig: Rig; show: ShowState; patterns: PatternMeta[]; scenes: Scene[]; playlists: Playlist[]; settings: Settings; status: OutputStatus; presence: Presence[] }
   | { type: "show"; show: ShowState }
   | { type: "rig"; rig: Rig }
@@ -67,7 +68,9 @@ export type ClientMessage =
   | { type: "testFixture"; fixtureId: string; seconds?: number }
   | { type: "audio"; frame: AudioFrame | null }
   | { type: "setFollowMicBpm"; on: boolean }
-  | { type: "setSleep"; minutes: number | null };
+  | { type: "setSleep"; minutes: number | null }
+  | { type: "listDevices" }
+  | { type: "forgetDevice"; deviceId: string };
 
 export function requiredRole(msg: ClientMessage): Role {
   switch (msg.type) {
@@ -111,6 +114,8 @@ export interface AgentToolCall {
 export interface AgentChatMessage {
   id: string;
   role: "user" | "assistant";
+  /** Display name of the person who sent a user message. */
+  by?: string;
   text: string;
   toolCalls: AgentToolCall[];
   createdAt: number;
@@ -130,7 +135,7 @@ export type AgentCommand =
   | { type: "list" }
   | { type: "open"; conversationId: string }
   | { type: "new" }
-  | { type: "send"; conversationId: string | null; text: string; context?: { patternId?: string | null } }
+  | { type: "send"; conversationId: string | null; text: string; context?: { patternId?: string | null; by?: string } }
   | { type: "cancel"; conversationId: string }
   | { type: "delete"; conversationId: string };
 

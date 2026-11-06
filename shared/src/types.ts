@@ -156,6 +156,18 @@ export interface HistoryEntry {
   params: ParamValues;
   sceneId: string | null;
   at: number;
+  /** Display name of whoever deployed it. */
+  by?: string;
+}
+
+/** A browser known to the server through its device cookie. */
+export interface DeviceInfo {
+  id: string;
+  name: string;
+  firstSeen: number;
+  lastSeen: number;
+  lastRole: Role;
+  visits: number;
 }
 
 export interface ShowState {
@@ -295,10 +307,13 @@ export interface OutputStatus {
 
 export interface Presence {
   id: string;
+  deviceId: string;
   name: string;
   role: Role;
   color: string;
   connectedAt: number;
+  /** Open tabs/connections from this device. */
+  connections: number;
 }
 
 /** Per-fixture rendered color, as sent to clients for the live preview. */

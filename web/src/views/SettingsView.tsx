@@ -4,6 +4,7 @@ import type { Settings } from "@lightesota/shared";
 import { useStore } from "../state/store";
 import { ShareModal } from "../components/ShareModal";
 import { effectiveTheme } from "../lib/theme";
+import { timeAgo } from "../lib/format";
 
 export function SettingsView() {
   const settings = useStore((s) => s.settings)!;
@@ -52,6 +53,8 @@ export function SettingsView() {
               <label className="field"><span>Venue name (shown in the header)</span><input className="input" value={local.sharing.venueName} onChange={(e) => setLocal({ ...local, sharing: { ...local.sharing, venueName: e.target.value } })} onBlur={() => save({ sharing: local.sharing })} /></label>
               <label className="field"><span>Public URL for share links (optional, e.g. a Tailscale name)</span><input className="input" placeholder="auto-detect" value={local.sharing.publicUrl} onChange={(e) => setLocal({ ...local, sharing: { ...local.sharing, publicUrl: e.target.value } })} onBlur={() => save({ sharing: local.sharing })} /></label>
               <button className="btn primary" onClick={() => setShare(true)}><Share2 /> Share links & QR code</button>
+              <div className="divider" />
+              <KnownDevices />
             </div>
           </div>
         )}
@@ -171,6 +174,27 @@ export function SettingsView() {
         </div>
       </div>
       {share && <ShareModal onClose={() => setShare(false)} />}
+    </div>
+  );
+}
+
+function KnownDevices() {
+  const devices = useStore((s) => s.devices);
+  const send = useStore((s) => s.send);
+  const deviceId = useStore((s) => s.deviceId);
+  useEffect(() => { send({ type: "listDevices" }); }, [send]);
+  return (
+    <div className="stack">
+      <div className="row" style={{ justifyContent: "space-between" }}><span style={{ fontWeight: 600, fontSize: 13 }}>Known devices ({devices.length})</span><button className="btn sm ghost" onClick={() => send({ type: "listDevices" })}><RefreshCw /> Refresh</button></div>
+      <p className="hint">Every browser gets a device id on its first visit. Names, the agent cooldown and "who did what" attach to it.</p>
+      {devices.length > 0 && (
+        <div className="tbl-wrap"><table className="tbl"><thead><tr><th>Name</th><th>Role</th><th>Last seen</th><th>Visits</th><th /></tr></thead><tbody>
+          {devices.map((d) => (
+            <tr key={d.id}><td>{d.name || <span className="faint">unnamed</span>}{d.id === deviceId ? <span className="pill" style={{ marginLeft: 6 }}>you</span> : null}</td><td className="muted">{d.lastRole}</td><td className="muted">{timeAgo(d.lastSeen)}</td><td className="tabular">{d.visits}</td>
+              <td style={{ textAlign: "right" }}>{d.id !== deviceId && <button className="btn ghost sm" onClick={() => send({ type: "forgetDevice", deviceId: d.id })}>Forget</button>}</td></tr>
+          ))}
+        </tbody></table></div>
+      )}
     </div>
   );
 }

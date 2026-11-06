@@ -132,7 +132,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
   }
 
   // ---- patterns ----
-  setPattern(patternId: string | null, params?: ParamValues, crossfadeMs?: number, keepScene = false) {
+  setPattern(patternId: string | null, params?: ParamValues, crossfadeMs?: number, keepScene = false, by?: string) {
     const fade = crossfadeMs ?? this.state.crossfadeMs;
     if (!keepScene) this.state.activeSceneId = null;
     if (patternId === null) {
@@ -151,14 +151,14 @@ export class ShowController extends EventEmitter<ShowEvents> {
     this.state.patternId = patternId;
     this.state.params = clean;
     this.engine.switchPattern(p.id, p.source, clean, fade);
-    this.pushHistory(patternId, clean, keepScene ? this.state.activeSceneId : null);
+    this.pushHistory(patternId, clean, keepScene ? this.state.activeSceneId : null, by);
     this.changed();
   }
 
   /** Recent list: newest first, one entry per pattern, capped. */
-  private pushHistory(patternId: string, params: ParamValues, sceneId: string | null) {
+  private pushHistory(patternId: string, params: ParamValues, sceneId: string | null, by?: string) {
     const rest = this.state.history.filter((h) => h.patternId !== patternId);
-    this.state.history = [{ patternId, params: { ...params }, sceneId, at: Date.now() }, ...rest].slice(0, 12);
+    this.state.history = [{ patternId, params: { ...params }, sceneId, at: Date.now(), by }, ...rest].slice(0, 12);
   }
 
   forgetPattern(patternId: string) {
@@ -254,7 +254,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
     return scene;
   }
 
-  recallScene(sceneId: string, crossfadeMs?: number) {
+  recallScene(sceneId: string, crossfadeMs?: number, by?: string) {
     const s = this.library.scenes.find((x) => x.id === sceneId);
     if (!s) throw new Error("Scene not found");
     if (s.patternId && !this.library.getPattern(s.patternId)) throw new Error("The scene's pattern no longer exists");
@@ -264,7 +264,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
     this.state.speed = s.speed ?? 1; this.engine.speed = this.state.speed;
     if (s.bpm) this.engine.setBpm(s.bpm);
     this.state.activeSceneId = s.id;
-    this.setPattern(s.patternId, s.params, crossfadeMs, true);
+    this.setPattern(s.patternId, s.params, crossfadeMs, true, by);
     this.changed();
   }
 

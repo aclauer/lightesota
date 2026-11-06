@@ -125,10 +125,10 @@ function RecentStrip() {
         {entries.map(({ h, p, scene }) => {
           const live = show.patternId === h.patternId;
           return (
-            <button key={h.patternId} className={`recent-tile ${live ? "is-live" : ""}`} disabled={!control} onClick={() => send({ type: "setPattern", patternId: h.patternId, params: h.params })} title={`${p!.name}${scene ? ` (scene “${scene.name}”)` : ""}: ran ${timeAgo(h.at)}. Tap to deploy again with the same settings.`}>
+            <button key={h.patternId} className={`recent-tile ${live ? "is-live" : ""}`} disabled={!control} onClick={() => send({ type: "setPattern", patternId: h.patternId, params: h.params })} title={`${p!.name}${scene ? ` (scene “${scene.name}”)` : ""}: ran ${timeAgo(h.at)}${h.by ? ` by ${h.by}` : ""}. Tap to deploy again with the same settings.`}>
               <span className="swatches">{(p!.swatch?.length ? p!.swatch : ["#333"]).slice(0, 5).map((c, i) => <i key={i} style={{ background: c }} />)}</span>
               <span className="nm">{scene ? scene.name : p!.name}</span>
-              <span className="ago">{live ? "now" : timeAgo(h.at)}</span>
+              <span className="ago">{live ? "now" : timeAgo(h.at)}{h.by ? ` · ${h.by}` : ""}</span>
             </button>
           );
         })}

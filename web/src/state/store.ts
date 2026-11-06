@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type {
-  AgentConversation, AgentEvent, ClientMessage, FrameColor, OutputStatus, Pattern, PatternMeta, Playlist, Presence,
+  AgentConversation, AgentEvent, ClientMessage, DeviceInfo, FrameColor, OutputStatus, Pattern, PatternMeta, Playlist, Presence,
   Rig, Role, Scene, ServerMessage, Settings, ShowState, HueLightInfo,
 } from "@lightesota/shared";
 import { roleAllows } from "@lightesota/shared";
@@ -22,7 +22,9 @@ export interface AppState {
   connected: boolean;
   role: Role;
   clientId: string | null;
+  deviceId: string | null;
   myName: string;
+  devices: DeviceInfo[];
   rig: Rig | null;
   show: ShowState | null;
   patterns: PatternMeta[];
@@ -76,11 +78,14 @@ export const useStore = create<AppState>((set, get) => {
 
   const onMessage = (msg: ServerMessage) => {
     switch (msg.type) {
-      case "hello": set({ clientId: msg.clientId, role: msg.role, myName: msg.name }); {
+      case "hello": {
+        set({ clientId: msg.clientId, deviceId: msg.deviceId, role: msg.role, myName: msg.name });
+        // The server remembers names per device; fall back to a name saved in this browser before that existed.
         const saved = safeGet("lt-name");
-        if (saved) ws.send({ type: "setName", name: saved });
+        if (saved && /^Guest \d+$/.test(msg.name)) ws.send({ type: "setName", name: saved });
         break;
       }
+      case "devices": set({ devices: msg.devices }); break;
       case "snapshot":
         set({ rig: msg.rig, show: msg.show, patterns: msg.patterns, scenes: msg.scenes, playlists: msg.playlists, settings: msg.settings, status: msg.status, presence: msg.presence });
         break;
@@ -154,7 +159,7 @@ export const useStore = create<AppState>((set, get) => {
   const views: View[] = ["live", "patterns", "scenes", "playlists", "stage", "agent", "settings"];
 
   return {
-    ws, connected: false, role: "viewer", clientId: null, myName: "",
+    ws, connected: false, role: "viewer", clientId: null, deviceId: null, myName: "", devices: [],
     rig: null, show: null, patterns: [], scenes: [], playlists: [], settings: null, status: null, presence: [],
     frame: [], frameT: 0, dmx: null, patternCache: {}, hueLights: [], toasts: [],
     view: views.includes(hashView) ? hashView : "live",

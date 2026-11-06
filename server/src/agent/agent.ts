@@ -67,15 +67,16 @@ export class AgentService {
   cancel(id: string) { this.running.get(id)?.abort(); }
 
   // ---- chat ----
-  async send(conversationId: string | null, text: string, context?: { patternId?: string | null }) {
+  async send(conversationId: string | null, text: string, context?: { patternId?: string | null; by?: string }) {
     const conv = (conversationId ? this.load(conversationId) : null) ?? this.create();
     if (this.running.has(conv.id)) throw new Error("The agent is still working on this conversation");
     if (!this.hasCredentials()) throw new Error("No Anthropic credentials. Set ANTHROPIC_API_KEY in the server environment (see README).");
 
-    const userMsg: AgentChatMessage = { id: nanoid(8), role: "user", text, toolCalls: [], createdAt: Date.now() };
+    const userMsg: AgentChatMessage = { id: nanoid(8), role: "user", by: context?.by, text, toolCalls: [], createdAt: Date.now() };
     conv.messages.push(userMsg);
     if (conv.messages.length === 1) conv.title = text.slice(0, 48) + (text.length > 48 ? "…" : "");
     let userText = text;
+    if (context?.by) userText = `[${context.by}] ${userText}`;
     if (context?.patternId) {
       const p = this.host.library.getPattern(context.patternId);
       if (p) userText += `\n\n(The user currently has pattern "${p.name}" (id ${p.id}) selected in the editor.)`;

@@ -5,10 +5,12 @@ import {
   requiredRole, roleAllows, type ClientMessage, type Presence, type Role, type ServerMessage, type Rig, type Settings,
 } from "../../../shared/src/index.js";
 import { deepMerge } from "../store.js";
+import { parseCookies } from "./auth.js";
+import { DEVICE_COOKIE, newDeviceId } from "./devices.js";
 import type { AppContext } from "./context.js";
 import { validateRig } from "./validate.js";
 
-interface Client { ws: WebSocket; id: string; role: Role; name: string; color: string; connectedAt: number; wantsDmx: boolean; alive: boolean; ip: string; }
+interface Client { ws: WebSocket; id: string; deviceId: string; role: Role; name: string; color: string; connectedAt: number; wantsDmx: boolean; alive: boolean; ip: string; }
 
 /** Sliding-window counter keyed by string (per device ip, or "*" for everyone). */
 class RateLimiter {
@@ -33,6 +35,7 @@ class RateLimiter {
   }
 }
 
+const hashStr = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
 const fmtWait = (s: number) => (s < 90 ? `${s} s` : `${Math.ceil(s / 60)} min`);
 const COLORS = ["#ff6b6b", "#ffa94d", "#ffd43b", "#69db7c", "#38d9a9", "#4dabf7", "#9775fa", "#f783ac", "#63e6be", "#a9e34b"];
 
@@ -49,9 +52,12 @@ export class WsHub {
       const role = ctx.auth.roleForRequest(req);
       const id = nanoid(8);
       const ip = (typeof req.headers["x-forwarded-for"] === "string" ? req.headers["x-forwarded-for"].split(",")[0].trim() : "") || req.socket.remoteAddress || "?";
-      const client: Client = { ws, id, role, name: `Guest ${this.clients.size + 1}`, color: COLORS[this.clients.size % COLORS.length], connectedAt: Date.now(), wantsDmx: false, alive: true, ip };
+      const deviceId = parseCookies(req.headers.cookie)[DEVICE_COOKIE] || newDeviceId();
+      const known = ctx.devices.touch(deviceId, { role, visits: 1 });
+      const color = COLORS[hashStr(deviceId) % COLORS.length];
+      const client: Client = { ws, id, deviceId, role, name: known.name || `Guest ${this.clients.size + 1}`, color, connectedAt: Date.now(), wantsDmx: false, alive: true, ip };
       this.clients.set(id, client);
-      this.send(client, { type: "hello", clientId: id, role, serverTime: Date.now(), name: client.name });
+      this.send(client, { type: "hello", clientId: id, deviceId, role, serverTime: Date.now(), name: client.name });
       this.send(client, this.snapshot(client.role));
       this.broadcastPresence();
       ws.on("message", (data) => this.onMessage(client, data.toString()));
@@ -111,8 +117,15 @@ export class WsHub {
     for (const c of this.clients.values()) this.send(c, { type: "settings", settings: this.publicSettings(s, c.role) });
   }
 
+  /** One presence row per device, however many tabs it has open. */
   presence(): Presence[] {
-    return [...this.clients.values()].map((c) => ({ id: c.id, name: c.name, role: c.role, color: c.color, connectedAt: c.connectedAt }));
+    const byDevice = new Map<string, Presence>();
+    for (const c of this.clients.values()) {
+      const p = byDevice.get(c.deviceId);
+      if (p) { p.connections++; if (roleAllows(c.role, p.role)) p.role = c.role; }
+      else byDevice.set(c.deviceId, { id: c.id, deviceId: c.deviceId, name: c.name, role: c.role, color: c.color, connectedAt: c.connectedAt, connections: 1 });
+    }
+    return [...byDevice.values()];
   }
   broadcastPresence() { this.broadcast({ type: "presence", presence: this.presence() }); }
 
@@ -146,8 +159,15 @@ export class WsHub {
     const { show, library, ctx } = { show: this.ctx.show, library: this.ctx.library, ctx: this.ctx };
     switch (msg.type) {
       case "ping": this.send(client, { type: "pong", t: msg.t, serverTime: Date.now() }); return;
-      case "setName": client.name = String(msg.name).slice(0, 24) || client.name; this.broadcastPresence(); return;
-      case "setPattern": show.setPattern(msg.patternId, msg.params, msg.crossfadeMs); return;
+      case "setName": {
+        const name = String(msg.name).trim().slice(0, 24);
+        if (!name) return;
+        ctx.devices.touch(client.deviceId, { name });
+        for (const c of this.clients.values()) if (c.deviceId === client.deviceId) c.name = name;
+        this.broadcastPresence();
+        return;
+      }
+      case "setPattern": show.setPattern(msg.patternId, msg.params, msg.crossfadeMs, false, client.name); return;
       case "setParams": show.setParams(msg.params, msg.merge ?? true); return;
       case "setMaster": show.setMaster(Number(msg.master)); return;
       case "setBlackout": show.setBlackout(!!msg.blackout); return;
@@ -161,7 +181,7 @@ export class WsHub {
       case "clearOverrides": show.clearOverrides(); return;
       case "setSolo": show.setSolo(msg.fixtureIds); return;
       case "setReleased": show.setReleased(!!msg.released); ctx.output.released = !!msg.released; return;
-      case "recallScene": show.recallScene(msg.sceneId, msg.crossfadeMs); return;
+      case "recallScene": show.recallScene(msg.sceneId, msg.crossfadeMs, client.name); return;
       case "saveScene": return show.captureScene(msg.name, msg.sceneId);
       case "updateScene": {
         const s = library.scenes.find((x) => x.id === msg.scene.id);
@@ -224,6 +244,8 @@ export class WsHub {
         return;
       }
       case "subscribeDmx": client.wantsDmx = msg.on; return;
+      case "listDevices": this.send(client, { type: "devices", devices: ctx.devices.list() }); return;
+      case "forgetDevice": ctx.devices.forget(msg.deviceId); this.send(client, { type: "devices", devices: ctx.devices.list() }); return;
       case "agent": return this.handleAgent(client, msg.command);
       case "huePair": {
         const hue = ctx.output.hue;
@@ -269,7 +291,7 @@ export class WsHub {
       if (!a.guestAccess) throw new Error("The agent is not open to guests right now");
       if (cmd.type === "delete") throw new Error("Guests cannot delete conversations");
       if (cmd.type === "send") {
-        const wait = this.limiter.cooldown(client.ip, Math.max(1, a.guestIntervalSec));
+        const wait = this.limiter.cooldown(client.deviceId, Math.max(1, a.guestIntervalSec));
         if (wait) throw new Error(`One prompt every ${a.guestIntervalSec} s per person. Try again in ${fmtWait(wait)}.`);
         const waitAll = this.limiter.take("*", Math.max(1, a.guestTotalPerHour));
         if (waitAll) throw new Error(`The room has used its agent budget for this hour. Try again in ${fmtWait(waitAll)}.`);
@@ -282,7 +304,7 @@ export class WsHub {
       case "delete": agent.delete(cmd.conversationId); sendTo({ type: "conversations", conversations: agent.list() }); return;
       case "cancel": agent.cancel(cmd.conversationId); return;
       case "send":
-        agent.send(cmd.conversationId, cmd.text, cmd.context).catch((e: Error) => this.send(client, { type: "error", text: e.message }));
+        agent.send(cmd.conversationId, cmd.text, { ...cmd.context, by: client.name }).catch((e: Error) => this.send(client, { type: "error", text: e.message }));
         return;
     }
   }
