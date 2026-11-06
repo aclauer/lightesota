@@ -22,7 +22,7 @@ export function MiniStage() {
         <button className="btn ghost icon sm" onClick={toggle} title={collapsed ? "Show preview" : "Hide preview"} aria-label={collapsed ? "Show preview" : "Hide preview"}>{collapsed ? <ChevronUp /> : <ChevronDown />}</button>
       </div>
       {!collapsed && (
-        <div className="pip-stage" onClick={() => setView("live")} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && setView("live")} title="Click to open Live">
+        <div className="pip-stage" style={{ height: Math.round(Math.min(260, Math.max(120, (280 * rig.room.height) / rig.room.width + 20))) }} onClick={() => setView("live")} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && setView("live")} title="Click to open Live">
           <Stage rig={rig} mode="live" selectedId={null} showLabels={false} compact />
         </div>
       )}
