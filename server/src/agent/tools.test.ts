@@ -20,10 +20,11 @@ function makeHost(): AgentHost {
   return { library, show, getRig: () => rig, getSettings: () => settings, onPatternSaved: () => {} };
 }
 
-test("tool definitions are strict and named uniquely", () => {
+test("tool definitions are strict, named uniquely, and never use additionalProperties: true", () => {
   const names = TOOL_DEFS.map((t) => t.name);
   assert.equal(new Set(names).size, names.length);
   for (const t of TOOL_DEFS) assert.equal(t.strict, true);
+  assert.ok(!JSON.stringify(TOOL_DEFS).includes('"additionalProperties":true'));
 });
 
 test("write_pattern compiles, saves and reports params; apply_pattern activates it", () => {
@@ -33,7 +34,7 @@ test("write_pattern compiles, saves and reports params; apply_pattern activates 
   assert.equal(res.ok, true);
   assert.equal(res.name, "Test Glow");
   assert.deepEqual(Object.keys(res.params), ["level"]);
-  const applied = JSON.parse(runTool(host, "apply_pattern", { id: res.id, params: { level: 0.9 }, crossfadeMs: 0 }));
+  const applied = JSON.parse(runTool(host, "apply_pattern", { id: res.id, params: JSON.stringify({ level: 0.9 }), crossfadeMs: 0 }));
   assert.equal(applied.ok, true);
   assert.equal(host.show.state.patternId, res.id);
   assert.equal(host.show.state.params.level, 0.9);

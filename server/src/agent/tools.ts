@@ -61,7 +61,7 @@ export const TOOL_DEFS: ToolDef[] = [
       type: "object",
       properties: {
         id: { type: "string" },
-        params: { type: ["object", "null"], additionalProperties: true, description: "Param values to set (others keep defaults)" },
+        params: { type: ["string", "null"], description: "JSON object of param values to set, e.g. {\"speed\": 0.5} (others keep defaults)" },
         crossfadeMs: { type: ["number", "null"] },
       },
       required: ["id", "params", "crossfadeMs"],
@@ -72,7 +72,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "set_params",
     description: "Change params of the live pattern (merged into current values).",
-    input_schema: { type: "object", properties: { params: { type: "object", additionalProperties: true } }, required: ["params"], additionalProperties: false },
+    input_schema: { type: "object", properties: { params: { type: "string", description: "JSON object of param values, e.g. {\"color\": \"#ff0000\"}" } }, required: ["params"], additionalProperties: false },
     strict: true,
   },
   {
@@ -103,7 +103,11 @@ export const TOOL_DEFS: ToolDef[] = [
 
 const str = (v: unknown, name: string) => { if (typeof v !== "string") throw new Error(`${name} must be a string`); return v; };
 const num = (v: unknown, name: string) => { if (typeof v !== "number" || !Number.isFinite(v)) throw new Error(`${name} must be a number`); return v; };
-const obj = (v: unknown, name: string): Record<string, unknown> => { if (typeof v !== "object" || v === null || Array.isArray(v)) throw new Error(`${name} must be an object`); return v as Record<string, unknown>; };
+const obj = (v: unknown, name: string): Record<string, unknown> => {
+  if (typeof v === "string") { try { v = JSON.parse(v); } catch { throw new Error(`${name} must be a JSON object`); } }
+  if (typeof v !== "object" || v === null || Array.isArray(v)) throw new Error(`${name} must be an object`);
+  return v as Record<string, unknown>;
+};
 
 /** Execute a tool call. Throws on invalid input or failure; the caller turns that into an error result. */
 export function runTool(host: AgentHost, name: string, rawInput: unknown): string {
