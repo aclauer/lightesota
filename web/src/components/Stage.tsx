@@ -196,5 +196,5 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
     if (s.drag?.moved) { const f = rig.fixtures.find((x) => x.id === s.drag!.id); if (f) onMove?.(f.id, f.x, f.y, true); }
     s.drag = null; s.pan = null;
   };
-  return <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} aria-label="Room plan" />;
+  return <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} aria-label="Room plan" />;
 }
