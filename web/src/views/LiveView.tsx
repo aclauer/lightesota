@@ -6,7 +6,7 @@ import { useStore } from "../state/store";
 import { Stage } from "../components/Stage";
 import { ParamControls } from "../components/ParamControls";
 import { Modal } from "../components/Modal";
-import { hexToRgb01, rgb01ToHex } from "../lib/format";
+import { hexToRgb01, rgb01ToHex, timeAgo } from "../lib/format";
 
 export function LiveView() {
   const rig = useStore((s) => s.rig)!;
@@ -44,6 +44,7 @@ export function LiveView() {
           <Stage rig={rig} mode="live" selectedId={selected} onSelect={selectFixture} />
           <div className="stage-legend">Tap a fixture to inspect it · drag to pan · scroll to zoom · double-click to fit</div>
         </div>
+        <RecentStrip />
       </div>
       <div className="side">
         {selected ? <FixtureInspector id={selected} onClose={() => selectFixture(null)} /> : null}
@@ -102,6 +103,36 @@ export function LiveView() {
         )}
       </div>
       {saveOpen && <SaveSceneModal onClose={() => setSaveOpen(false)} />}
+    </div>
+  );
+}
+
+function RecentStrip() {
+  const show = useStore((s) => s.show)!;
+  const patterns = useStore((s) => s.patterns);
+  const scenes = useStore((s) => s.scenes);
+  const send = useStore((s) => s.send);
+  const can = useStore((s) => s.can);
+  const [, tick] = useStateReact(0);
+  useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 15000); return () => clearInterval(t); }, []);
+  const control = can("guest");
+  const entries = show.history.map((h) => ({ h, p: patterns.find((p) => p.id === h.patternId), scene: h.sceneId ? scenes.find((s) => s.id === h.sceneId) : undefined })).filter((e) => e.p);
+  if (entries.length === 0) return null;
+  return (
+    <div className="recent" aria-label="Recently deployed">
+      <span className="recent-label">Recent</span>
+      <div className="recent-tiles">
+        {entries.map(({ h, p, scene }) => {
+          const live = show.patternId === h.patternId;
+          return (
+            <button key={h.patternId} className={`recent-tile ${live ? "is-live" : ""}`} disabled={!control} onClick={() => send({ type: "setPattern", patternId: h.patternId, params: h.params })} title={`${p!.name}${scene ? ` (scene “${scene.name}”)` : ""}: ran ${timeAgo(h.at)}. Tap to deploy again with the same settings.`}>
+              <span className="swatches">{(p!.swatch?.length ? p!.swatch : ["#333"]).slice(0, 5).map((c, i) => <i key={i} style={{ background: c }} />)}</span>
+              <span className="nm">{scene ? scene.name : p!.name}</span>
+              <span className="ago">{live ? "now" : timeAgo(h.at)}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

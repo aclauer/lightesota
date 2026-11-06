@@ -174,6 +174,7 @@ export class WsHub {
       case "deletePattern":
         if (show.state.patternId === msg.patternId) show.setPattern(null);
         library.deletePattern(msg.patternId);
+        show.forgetPattern(msg.patternId);
         return;
       case "duplicatePattern": {
         const p = library.duplicatePattern(msg.patternId);

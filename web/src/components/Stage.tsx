@@ -147,12 +147,7 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
           if (mode === "edit" && f.address) { ctx.strokeText(`@${f.address}`, cx, cy + r + 19); ctx.fillStyle = "#b9b7b0"; ctx.fillText(`@${f.address}`, cx, cy + r + 19); }
         }
       }
-      if (compact) return;
-      // Scale bar (bottom right)
-      ctx.fillStyle = fg3; ctx.font = "10px system-ui"; ctx.textAlign = "right"; ctx.textBaseline = "bottom";
-      ctx.fillRect(s.w - 12 - s.scale, s.h - 12, s.scale, 2);
-      ctx.fillText("1 m", s.w - 12, s.h - 14);
-      void bg;
+      void bg; void compact;
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);

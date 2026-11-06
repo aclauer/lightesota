@@ -65,7 +65,7 @@ export function StageEditorView() {
         </div>
         <div className="stage-card">
           <Stage rig={r} mode="edit" selectedId={selected} onSelect={selectFixture} onMove={(id, x, y, done) => patch(id, { x, y }, done)} />
-          <div className="stage-legend">{r.room.width} m × {r.room.height} m · grid {r.room.gridStep} m</div>
+          <div className="stage-legend">{r.room.width} × {r.room.height} units · grid {r.room.gridStep}</div>
         </div>
       </div>
       <div className="side">
@@ -101,8 +101,8 @@ export function StageEditorView() {
                 </label>
               )}
               <div className="row nowrap">
-                <label className="field" style={{ flex: 1 }}><span>X (m)</span><input className="input tabular" type="number" step={0.1} value={f.x} onChange={(e) => patch(f.id, { x: Number(e.target.value) })} /></label>
-                <label className="field" style={{ flex: 1 }}><span>Y (m)</span><input className="input tabular" type="number" step={0.1} value={f.y} onChange={(e) => patch(f.id, { y: Number(e.target.value) })} /></label>
+                <label className="field" style={{ flex: 1 }}><span>X</span><input className="input tabular" type="number" step={0.1} value={f.x} onChange={(e) => patch(f.id, { x: Number(e.target.value) })} /></label>
+                <label className="field" style={{ flex: 1 }}><span>Y</span><input className="input tabular" type="number" step={0.1} value={f.y} onChange={(e) => patch(f.id, { y: Number(e.target.value) })} /></label>
                 <label className="field" style={{ flex: 1 }}><span>Rotation</span><input className="input tabular" type="number" step={15} value={f.rotation} onChange={(e) => patch(f.id, { rotation: Number(e.target.value) })} /></label>
               </div>
               <label className="field"><span>Tags (comma separated; patterns can target these)</span><input className="input" defaultValue={f.tags.join(", ")} key={f.id} onBlur={(e) => patch(f.id, { tags: e.target.value.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean) })} /></label>
@@ -116,9 +116,9 @@ export function StageEditorView() {
             <div className="stack">
               <label className="field"><span>Name</span><input className="input" value={r.room.name} onChange={(e) => update({ ...r, room: { ...r.room, name: e.target.value } }, false)} onBlur={() => draft && commit(draft)} /></label>
               <div className="row nowrap">
-                <label className="field" style={{ flex: 1 }}><span>Width (m)</span><input className="input tabular" type="number" step={0.5} min={1} value={r.room.width} onChange={(e) => commit({ ...r, room: { ...r.room, width: Number(e.target.value) } })} /></label>
-                <label className="field" style={{ flex: 1 }}><span>Depth (m)</span><input className="input tabular" type="number" step={0.5} min={1} value={r.room.height} onChange={(e) => commit({ ...r, room: { ...r.room, height: Number(e.target.value) } })} /></label>
-                <label className="field" style={{ flex: 1 }}><span>Grid (m)</span><input className="input tabular" type="number" step={0.25} min={0.1} value={r.room.gridStep} onChange={(e) => commit({ ...r, room: { ...r.room, gridStep: Number(e.target.value) } })} /></label>
+                <label className="field" style={{ flex: 1 }}><span>Width</span><input className="input tabular" type="number" step={0.5} min={1} value={r.room.width} onChange={(e) => commit({ ...r, room: { ...r.room, width: Number(e.target.value) } })} /></label>
+                <label className="field" style={{ flex: 1 }}><span>Depth</span><input className="input tabular" type="number" step={0.5} min={1} value={r.room.height} onChange={(e) => commit({ ...r, room: { ...r.room, height: Number(e.target.value) } })} /></label>
+                <label className="field" style={{ flex: 1 }}><span>Grid</span><input className="input tabular" type="number" step={0.25} min={0.1} value={r.room.gridStep} onChange={(e) => commit({ ...r, room: { ...r.room, gridStep: Number(e.target.value) } })} /></label>
               </div>
               <p className="hint">Select a fixture on the plan to edit it, or add one with the menu above.</p>
             </div>

@@ -189,7 +189,17 @@ input[type=range]:disabled { opacity: 0.4; }
 
 /* Layouts */
 .live { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; height: 100%; min-height: 0; }
-.live .stage-wrap { display: grid; grid-template-rows: auto 1fr; gap: 10px; min-height: 320px; }
+.live .stage-wrap { display: grid; grid-template-rows: auto 1fr auto; gap: 10px; min-height: 320px; }
+.recent { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.recent-label { font-size: 11px; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; flex: none; }
+.recent-tiles { display: flex; gap: 8px; overflow-x: auto; min-width: 0; padding: 2px 2px 6px; scrollbar-width: thin; flex: 1; }
+.recent-tile { flex: none; width: 128px; display: grid; gap: 5px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: inherit; text-align: left; cursor: pointer; }
+.recent-tile:hover { border-color: var(--line-strong); }
+.recent-tile.is-live { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.recent-tile .nm { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-tile .ago { font-size: 11px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.recent-tile.is-live .ago { color: var(--accent); }
+.recent-tile:disabled { cursor: default; }
 .live .side { display: grid; gap: 12px; align-content: start; overflow: auto; min-height: 0; }
 @media (max-width: 1000px) { .live { grid-template-columns: minmax(0, 1fr); height: auto; } .live .stage-wrap { min-height: 260px; } .live .stage-card { min-height: 300px; } }
 .stage-card { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; min-height: 240px; }

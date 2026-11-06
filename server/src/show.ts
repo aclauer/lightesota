@@ -24,6 +24,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
     this.file = new JsonFile<Partial<ShowState>>("show.json", () => ({}));
     const saved = this.file.get();
     const base: ShowState = {
+      history: [],
       patternId: null, params: {}, outgoingPatternId: null, crossfadeMs: 800, master: 1, blackout: false, speed: 1,
       transport: { bpm: 120, beatOrigin: Date.now(), running: true },
       overrides: {}, solo: [], activeSceneId: null, playlist: null, released: false,
@@ -38,6 +39,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
       outgoingPatternId: null,
       sleepAt: null,
       audio: { active: false, source: null, followBpm: saved.audio?.followBpm ?? false, level: 0, bpm: null },
+      history: Array.isArray(saved.history) ? saved.history.filter((h) => h && typeof h.patternId === "string").slice(0, 12) : [],
     };
     setInterval(() => this.audioTick(), 500).unref();
     this.engine.on("patternLoaded", ({ id, params }) => {
@@ -149,6 +151,18 @@ export class ShowController extends EventEmitter<ShowEvents> {
     this.state.patternId = patternId;
     this.state.params = clean;
     this.engine.switchPattern(p.id, p.source, clean, fade);
+    this.pushHistory(patternId, clean, keepScene ? this.state.activeSceneId : null);
+    this.changed();
+  }
+
+  /** Recent list: newest first, one entry per pattern, capped. */
+  private pushHistory(patternId: string, params: ParamValues, sceneId: string | null) {
+    const rest = this.state.history.filter((h) => h.patternId !== patternId);
+    this.state.history = [{ patternId, params: { ...params }, sceneId, at: Date.now() }, ...rest].slice(0, 12);
+  }
+
+  forgetPattern(patternId: string) {
+    this.state.history = this.state.history.filter((h) => h.patternId !== patternId);
     this.changed();
   }
 
@@ -249,8 +263,8 @@ export class ShowController extends EventEmitter<ShowEvents> {
     this.state.master = s.master; this.engine.master = s.master;
     this.state.speed = s.speed ?? 1; this.engine.speed = this.state.speed;
     if (s.bpm) this.engine.setBpm(s.bpm);
-    this.setPattern(s.patternId, s.params, crossfadeMs, true);
     this.state.activeSceneId = s.id;
+    this.setPattern(s.patternId, s.params, crossfadeMs, true);
     this.changed();
   }
 

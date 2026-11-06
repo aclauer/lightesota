@@ -150,7 +150,17 @@ export interface Transport {
   running: boolean;
 }
 
+/** One entry in the recently-deployed list, newest first. */
+export interface HistoryEntry {
+  patternId: string;
+  params: ParamValues;
+  sceneId: string | null;
+  at: number;
+}
+
 export interface ShowState {
+  /** Recently deployed patterns, newest first, one entry per pattern. */
+  history: HistoryEntry[];
   patternId: string | null;
   params: ParamValues;
   /** Pattern that is fading out (for the UI only). */
