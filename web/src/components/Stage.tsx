@@ -175,7 +175,6 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
       if (mode === "edit") s.drag = { id: f.id, dx: x - (s.ox + f.x * s.scale), dy: y - (s.oy + f.y * s.scale), moved: false };
     } else {
       onSelect?.(null);
-      s.pan = { x, y, ox: s.ox, oy: s.oy };
     }
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -186,8 +185,6 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
       if (!e.altKey) { fx = Math.round(fx / step) * step; fy = Math.round(fy / step) * step; }
       s.drag.moved = true;
       onMove?.(s.drag.id, Math.round(fx * 100) / 100, Math.round(fy * 100) / 100, false);
-    } else if (s.pan) {
-      s.ox = s.pan.ox + (x - s.pan.x); s.oy = s.pan.oy + (y - s.pan.y);
     } else {
       const h = hit(x, y);
       const id = h?.id ?? null;
@@ -199,12 +196,5 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
     if (s.drag?.moved) { const f = rig.fixtures.find((x) => x.id === s.drag!.id); if (f) onMove?.(f.id, f.x, f.y, true); }
     s.drag = null; s.pan = null;
   };
-  const onWheel = (e: React.WheelEvent) => {
-    const s = state.current; const r = (e.target as HTMLElement).getBoundingClientRect();
-    const x = e.clientX - r.left, y = e.clientY - r.top;
-    const k = Math.exp(-e.deltaY * 0.0015);
-    const ns = Math.max(4, Math.min(400, s.scale * k));
-    s.ox = x - (x - s.ox) * (ns / s.scale); s.oy = y - (y - s.oy) * (ns / s.scale); s.scale = ns;
-  };
-  return <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheel} onDoubleClick={fit} aria-label="Room plan" />;
+  return <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} aria-label="Room plan" />;
 }

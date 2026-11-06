@@ -42,7 +42,7 @@ export function LiveView() {
         </div>
         <div className="stage-card">
           <Stage rig={rig} mode="live" selectedId={selected} onSelect={selectFixture} />
-          <div className="stage-legend">Tap a fixture to inspect it · drag to pan · scroll to zoom · double-click to fit</div>
+          <div className="stage-legend">Tap a fixture to inspect it</div>
         </div>
         <RecentStrip />
       </div>
