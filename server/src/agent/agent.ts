@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { nanoid } from "nanoid";
-import type { AgentChatMessage, AgentConversation, AgentEvent, AgentToolCall } from "../../../shared/src/index.js";
+import type { AgentChatMessage, AgentConversation, AgentEvent, AgentToolCall, Role } from "../../../shared/src/index.js";
 import { config } from "../config.js";
 import { dynamicSystem, STATIC_SYSTEM } from "./prompt.js";
 import { runTool, TOOL_DEFS, type AgentHost } from "./tools.js";
@@ -71,7 +71,8 @@ export class AgentService {
   cancel(id: string) { this.running.get(id)?.abort(); }
 
   // ---- chat ----
-  async send(conversationId: string | null, text: string, context?: { patternId?: string | null; by?: string; owner?: { deviceId: string; name: string } }) {
+  async send(conversationId: string | null, text: string, context?: { patternId?: string | null; by?: string; owner?: { deviceId: string; name: string }; role?: Role }) {
+    const caller = { role: context?.role ?? "guest", by: context?.by ?? "" };
     const existing = conversationId ? this.load(conversationId) : null;
     const conv = existing ?? this.create(context?.owner);
     if (!conv.ownerDeviceId && context?.owner) { conv.ownerDeviceId = context.owner.deviceId; conv.ownerName = context.owner.name; }
@@ -175,7 +176,7 @@ export class AgentService {
           call.partial = undefined;
           let result: string, isError = false;
           try {
-            result = runTool(this.host, tu.name, tu.input);
+            result = runTool(this.host, tu.name, tu.input, caller);
           } catch (e) {
             result = `Error: ${(e as Error).message}`;
             isError = true;

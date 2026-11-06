@@ -67,6 +67,8 @@ export const BUILTIN_PROFILES: FixtureProfile[] = [
     transport: "dmx",
     colorModel: "rgb",
     kind: "laser",
+    apertures: 2,
+    apertureSpread: 50,
     shape: "square",
     size: 0.3,
     // Address planning only. The output stage writes these ten channels from the approved laser

@@ -113,19 +113,25 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
           const len = Math.max(rig.room.width, rig.room.height) * s.scale;
           const dir = (f.rotation + 90) * Math.PI / 180; // rotation 0 = beam toward +y (into the room)
           const panOff = st?.mode === "manual" ? ((st.pan - 64) / 16) * 0.35 : 0;
-          const spread = st?.mode === "music" ? 0.9 : st?.pattern === "wave" ? 0.7 : 0.6;
-          ctx.save();
-          ctx.translate(cx, cy); ctx.rotate(dir + panOff);
-          const g = ctx.createLinearGradient(0, 0, len, 0);
-          g.addColorStop(0, hexA(col, 0.45));
-          g.addColorStop(1, hexA(col, 0));
-          ctx.fillStyle = g;
-          ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(len * Math.cos(-spread / 2), len * Math.sin(-spread / 2)); ctx.lineTo(len * Math.cos(spread / 2), len * Math.sin(spread / 2)); ctx.closePath(); ctx.fill();
-          // A few beam lines so it reads as a laser rather than a wash.
-          ctx.strokeStyle = hexA(col, 0.8); ctx.lineWidth = 1;
-          const n = st?.mode === "music" ? 9 : 7;
-          for (let i = 0; i < n; i++) { const a = -spread / 2 + (spread * i) / (n - 1); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(len * 0.9 * Math.cos(a), len * 0.9 * Math.sin(a)); ctx.stroke(); }
-          ctx.restore();
+          const spread = st?.mode === "music" ? 0.55 : st?.pattern === "wave" ? 0.42 : 0.35;
+          // Dual-mirror units put out one fan per aperture, splayed apart around the aiming direction.
+          const apertures = Math.max(1, p?.apertures ?? 1);
+          const splay = ((p?.apertureSpread ?? 0) * Math.PI) / 180;
+          for (let k = 0; k < apertures; k++) {
+            const offset = apertures === 1 ? 0 : -splay / 2 + (splay * k) / (apertures - 1);
+            ctx.save();
+            ctx.translate(cx, cy); ctx.rotate(dir + panOff + offset);
+            const g = ctx.createLinearGradient(0, 0, len, 0);
+            g.addColorStop(0, hexA(col, 0.45));
+            g.addColorStop(1, hexA(col, 0));
+            ctx.fillStyle = g;
+            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(len * Math.cos(-spread / 2), len * Math.sin(-spread / 2)); ctx.lineTo(len * Math.cos(spread / 2), len * Math.sin(spread / 2)); ctx.closePath(); ctx.fill();
+            // A few beam lines so it reads as a laser rather than a wash.
+            ctx.strokeStyle = hexA(col, 0.8); ctx.lineWidth = 1;
+            const n = st?.mode === "music" ? 7 : 5;
+            for (let i = 0; i < n; i++) { const a = -spread / 2 + (spread * i) / (n - 1); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(len * 0.9 * Math.cos(a), len * 0.9 * Math.sin(a)); ctx.stroke(); }
+            ctx.restore();
+          }
         }
       }
       // Glows first (live)

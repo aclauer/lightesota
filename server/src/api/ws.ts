@@ -321,7 +321,7 @@ export class WsHub {
       case "send":
         if (cmd.conversationId && !canTouch(cmd.conversationId)) throw new Error("That conversation belongs to someone else");
         if (cmd.conversationId) client.openConv = cmd.conversationId;
-        agent.send(cmd.conversationId, cmd.text, { ...cmd.context, by: client.name, owner }).then((id) => { client.openConv = id; }).catch((e: Error) => this.send(client, { type: "error", text: e.message }));
+        agent.send(cmd.conversationId, cmd.text, { ...cmd.context, by: client.name, owner, role: client.role }).then((id) => { client.openConv = id; }).catch((e: Error) => this.send(client, { type: "error", text: e.message }));
         return;
     }
   }
