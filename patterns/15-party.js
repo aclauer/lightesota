@@ -1,0 +1,27 @@
+export default {
+  name: "Party Mode",
+  description: "Palette hits on every beat, pinspots alternate on the off-beats, a strobe burst on bar 4.",
+  tags: ["party", "beat"],
+  params: {
+    palette: { type: "palette", default: PALETTES.neon, label: "Palette" },
+    decay: { type: "number", default: 5, min: 1, max: 20, step: 0.5, label: "Hit decay", group: "Timing" },
+    movement: { type: "number", default: 0.5, min: 0, max: 1, step: 0.01, label: "Movement across room" },
+    burst: { type: "boolean", default: true, label: "Strobe burst on every 4th bar" },
+    floor: { type: "number", default: 0.1, min: 0, max: 1, step: 0.01, label: "Floor level" },
+  },
+  render(ctx) {
+    const p = ctx.params;
+    const beatIdx = Math.floor(ctx.beat);
+    const env = Math.exp(-ctx.beatPhase * p.decay);
+    const burst = p.burst && Math.floor(ctx.bar) % 4 === 3 && ctx.beat % 4 >= 3;
+    for (const f of ctx.fixtures) {
+      const shift = Math.floor(f.nx * 3 * p.movement);
+      const col = hex(p.palette[(beatIdx + shift) % p.palette.length]);
+      if (f.kind === "spot") {
+        const off = Math.exp(-((ctx.beat + 0.5) % 1) * p.decay);
+        const mine = (beatIdx + (f.nx < 0.5 ? 0 : 1)) % 2 === 0;
+        ctx.set(f, [1, 1, 1], { dim: mine ? off : 0 });
+      } else ctx.set(f, burst ? [1, 1, 1] : col, { dim: burst ? 1 : p.floor + (1 - p.floor) * env, strobe: burst ? 0.8 : 0 });
+    }
+  },
+};

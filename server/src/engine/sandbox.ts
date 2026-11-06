@@ -1,0 +1,269 @@
+import vm from "node:vm";
+import {
+  clamp, clamp01, fract, hex, hsl, hsv, lerp, luminance, mix, paletteAt, PALETTES, scale, smoothstep, wrap,
+  defaultParams, sanitizeParams, validateSchema,
+  type ParamSchema, type ParamValues, type RGB,
+} from "@lightesota/shared";
+import { noise, noise2, noise3 } from "./noise.js";
+
+/** Fixture description handed to patterns. */
+export interface SandboxFixture {
+  id: string; name: string; index: number;
+  x: number; y: number; nx: number; ny: number; dist: number; angle: number; rotation: number;
+  kind: "wash" | "spot" | "hue" | "other";
+  tags: string[];
+  isColor: boolean;
+}
+
+/** Per-fixture output: r g b w a uv dim strobe */
+export const OUT_STRIDE = 8;
+
+export interface CompiledPattern {
+  name: string;
+  description: string;
+  tags: string[];
+  params: ParamSchema;
+  usesBeat: boolean;
+  init?: (ctx: RenderCtx) => void;
+  render: (ctx: RenderCtx) => void;
+}
+
+export interface RenderCtx {
+  t: number; dt: number; frame: number; bpm: number; beat: number; beatPhase: number;
+  bar: number; barPhase: number; onBeat: boolean;
+  params: ParamValues; state: Record<string, unknown>;
+  n: number; fixtures: SandboxFixture[];
+  washes: SandboxFixture[]; spots: SandboxFixture[]; hue: SandboxFixture[];
+  random: () => number;
+  set: (f: SandboxFixture | number, color: RGB | string | number[], extras?: Extras) => void;
+  fill: (color: RGB | string | number[], extras?: Extras) => void;
+  get: (f: SandboxFixture | number) => { r: number; g: number; b: number; w: number; a: number; uv: number; dim: number; strobe: number };
+  byTag: (tag: string) => SandboxFixture[];
+  log: (...args: unknown[]) => void;
+}
+interface Extras { w?: number; a?: number; uv?: number; dim?: number; strobe?: number }
+
+const ease = {
+  linear: (t: number) => t,
+  inQuad: (t: number) => t * t,
+  outQuad: (t: number) => t * (2 - t),
+  inOutQuad: (t: number) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t),
+  inCubic: (t: number) => t * t * t,
+  outCubic: (t: number) => --t * t * t + 1,
+  inOutCubic: (t: number) => (t < 0.5 ? 4 * t * t * t : (t - 1) * (2 * t - 2) * (2 * t - 2) + 1),
+  outExpo: (t: number) => (t === 1 ? 1 : 1 - Math.pow(2, -10 * t)),
+  outBack: (t: number) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); },
+  outBounce: (t: number) => {
+    const n1 = 7.5625, d1 = 2.75;
+    if (t < 1 / d1) return n1 * t * t;
+    if (t < 2 / d1) return n1 * (t -= 1.5 / d1) * t + 0.75;
+    if (t < 2.5 / d1) return n1 * (t -= 2.25 / d1) * t + 0.9375;
+    return n1 * (t -= 2.625 / d1) * t + 0.984375;
+  },
+};
+const tri = (p: number) => { p = fract(p); return p < 0.5 ? p * 2 : 2 - p * 2; };
+const saw = (p: number) => fract(p);
+const square = (p: number, duty = 0.5) => (fract(p) < duty ? 1 : 0);
+const pulse = (p: number, width = 0.1) => { p = fract(p); return p < width ? 1 - p / width : 0; };
+
+function makeGlobals(log: (...a: unknown[]) => void) {
+  return {
+    hsv, hsl, hex, mix, scale, paletteAt, PALETTES: Object.freeze({ ...PALETTES }),
+    lerp, clamp, clamp01, smoothstep, fract, wrap, luminance,
+    noise, noise2, noise3, tri, saw, square, pulse, ease: Object.freeze({ ...ease }),
+    Math, Array, Object, JSON, Number, String, Boolean, Map, Set, isFinite, isNaN, parseInt, parseFloat,
+    Infinity, NaN, undefined,
+    console: { log, warn: log, error: log, info: log },
+  };
+}
+
+/** Rewrite `export default X` to `module.exports = X` so patterns can be written as ES modules. */
+export function normalizeSource(src: string): string {
+  return src.replace(/^\s*export\s+default\s+/m, "module.exports = ");
+}
+
+export interface CompileOptions {
+  /** Max ms the top-level code may run. */
+  timeoutMs?: number;
+  log?: (...a: unknown[]) => void;
+}
+
+export function compilePattern(source: string, opts: CompileOptions = {}): CompiledPattern {
+  const log = opts.log ?? (() => {});
+  const wrapped = `(function (module, exports) {\n${normalizeSource(source)}\n})`;
+  const context = vm.createContext(makeGlobals(log), { codeGeneration: { strings: false, wasm: false } });
+  let factory: unknown;
+  try {
+    factory = new vm.Script(wrapped, { filename: "pattern.js" }).runInContext(context, { timeout: opts.timeoutMs ?? 1000 });
+  } catch (e) {
+    throw new Error(`Syntax error: ${(e as Error).message}`);
+  }
+  const module = { exports: {} as Record<string, unknown> };
+  try {
+    (factory as (m: typeof module, e: unknown) => void)(module, module.exports);
+  } catch (e) {
+    throw new Error(`Error while loading: ${(e as Error).message}`);
+  }
+  const def = (module.exports && typeof module.exports === "object" && "default" in module.exports
+    ? (module.exports as { default: unknown }).default : module.exports) as Record<string, unknown>;
+  if (!def || typeof def !== "object") throw new Error("Pattern must export an object (export default { ... })");
+  if (typeof def.render !== "function") throw new Error("Pattern must define render(ctx)");
+  const params = validateSchema(def.params);
+  const srcForBeat = source;
+  return {
+    name: typeof def.name === "string" && def.name.trim() ? def.name.trim().slice(0, 60) : "Untitled",
+    description: typeof def.description === "string" ? def.description.slice(0, 400) : "",
+    tags: Array.isArray(def.tags) ? def.tags.filter((t) => typeof t === "string").map((t) => String(t).toLowerCase().slice(0, 24)).slice(0, 10) : [],
+    params,
+    usesBeat: /\b(beat|beatPhase|bar|barPhase|onBeat|bpm)\b/.test(srcForBeat),
+    init: typeof def.init === "function" ? (def.init as (ctx: RenderCtx) => void) : undefined,
+    render: def.render as (ctx: RenderCtx) => void,
+  };
+}
+
+function mulberry32(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function toRGB(c: RGB | string | number[]): RGB {
+  if (typeof c === "string") return hex(c);
+  if (Array.isArray(c)) return [Number(c[0]) || 0, Number(c[1]) || 0, Number(c[2]) || 0];
+  return [0, 0, 0];
+}
+
+/** A running instance of a compiled pattern. Owns its output buffer. */
+export class PatternInstance {
+  readonly out: Float32Array;
+  readonly ctx: RenderCtx;
+  private frame = 0;
+  private lastBeatInt = -1;
+  t = 0;
+  params: ParamValues;
+  error: string | null = null;
+
+  constructor(public readonly compiled: CompiledPattern, public fixtures: SandboxFixture[], params: ParamValues | undefined, seed: number, private log: (...a: unknown[]) => void = () => {}) {
+    this.params = sanitizeParams(compiled.params, params);
+    this.out = new Float32Array(Math.max(1, fixtures.length) * OUT_STRIDE);
+    const self = this;
+    const idx = (f: SandboxFixture | number) => (typeof f === "number" ? f : f.index);
+    const ctx: RenderCtx = {
+      t: 0, dt: 0, frame: 0, bpm: 120, beat: 0, beatPhase: 0, bar: 0, barPhase: 0, onBeat: false,
+      params: this.params, state: {},
+      n: fixtures.length, fixtures,
+      washes: fixtures.filter((f) => f.kind === "wash"),
+      spots: fixtures.filter((f) => f.kind === "spot"),
+      hue: fixtures.filter((f) => f.kind === "hue"),
+      random: mulberry32(seed),
+      set(f, color, extras) {
+        const i = idx(f);
+        if (i < 0 || i >= self.fixtures.length) return;
+        const [r, g, b] = toRGB(color);
+        const o = i * OUT_STRIDE, out = self.out;
+        out[o] = r; out[o + 1] = g; out[o + 2] = b;
+        out[o + 3] = extras?.w ?? 0; out[o + 4] = extras?.a ?? 0; out[o + 5] = extras?.uv ?? 0;
+        out[o + 6] = extras?.dim ?? 1; out[o + 7] = extras?.strobe ?? 0;
+      },
+      fill(color, extras) { for (let i = 0; i < self.fixtures.length; i++) ctx.set(i, color, extras); },
+      get(f) {
+        const o = idx(f) * OUT_STRIDE, out = self.out;
+        return { r: out[o], g: out[o + 1], b: out[o + 2], w: out[o + 3], a: out[o + 4], uv: out[o + 5], dim: out[o + 6], strobe: out[o + 7] };
+      },
+      byTag: (tag) => fixtures.filter((f) => f.tags.includes(tag)),
+      log: (...a) => this.log(...a),
+    };
+    this.ctx = ctx;
+    if (compiled.init) {
+      try { compiled.init(ctx); } catch (e) { this.error = `init(): ${(e as Error).message}`; }
+    }
+  }
+
+  setParams(p: ParamValues) {
+    this.params = sanitizeParams(this.compiled.params, p);
+    this.ctx.params = this.params;
+  }
+
+  setFixtures(fixtures: SandboxFixture[]) {
+    this.fixtures = fixtures;
+    this.ctx.fixtures = fixtures;
+    this.ctx.n = fixtures.length;
+    this.ctx.washes = fixtures.filter((f) => f.kind === "wash");
+    this.ctx.spots = fixtures.filter((f) => f.kind === "spot");
+    this.ctx.hue = fixtures.filter((f) => f.kind === "hue");
+    (this as { out: Float32Array }).out = new Float32Array(Math.max(1, fixtures.length) * OUT_STRIDE);
+  }
+
+  render(dt: number, bpm: number, beat: number) {
+    const c = this.ctx;
+    this.t += dt;
+    c.t = this.t; c.dt = dt; c.frame = this.frame++;
+    c.bpm = bpm; c.beat = beat; c.beatPhase = fract(beat);
+    c.bar = beat / 4; c.barPhase = fract(beat / 4);
+    const bi = Math.floor(beat);
+    c.onBeat = bi !== this.lastBeatInt;
+    this.lastBeatInt = bi;
+    this.out.fill(0);
+    try {
+      this.compiled.render(c);
+      this.error = null;
+    } catch (e) {
+      this.error = `render(): ${(e as Error).message}`;
+    }
+    // Sanitize NaNs so a bad pattern cannot poison the output.
+    const out = this.out;
+    for (let i = 0; i < out.length; i++) {
+      const v = out[i];
+      out[i] = v !== v ? 0 : v < 0 ? 0 : v > 1 ? 1 : v;
+    }
+  }
+}
+
+/** Compile, instantiate and render a few frames with a synthetic rig to validate a pattern. */
+export function testPattern(source: string, fixtures?: SandboxFixture[]) {
+  const logs: string[] = [];
+  const compiled = compilePattern(source, { timeoutMs: 1000, log: (...a) => { if (logs.length < 20) logs.push(a.map(String).join(" ")); } });
+  const fx = fixtures ?? syntheticFixtures();
+  const inst = new PatternInstance(compiled, fx, defaultParams(compiled.params), 1, () => {});
+  if (inst.error) throw new Error(inst.error);
+  const t0 = performance.now();
+  for (let i = 0; i < 30; i++) {
+    inst.render(1 / 40, 120, i * 0.05 * 2);
+    if (inst.error) throw new Error(inst.error);
+  }
+  const perFrameMs = (performance.now() - t0) / 30;
+  // Swatch: colors of up to 5 fixtures on the final frame.
+  const swatch: string[] = [];
+  for (let i = 0; i < Math.min(fx.length, 6); i++) {
+    const o = i * OUT_STRIDE;
+    const d = inst.out[o + 6];
+    const r = inst.out[o] * d, g = inst.out[o + 1] * d, b = inst.out[o + 2] * d;
+    const w = inst.out[o + 3] * d;
+    swatch.push(rgbHex(Math.min(1, r + w), Math.min(1, g + w), Math.min(1, b + w)));
+  }
+  let lit = 0;
+  for (let i = 0; i < fx.length; i++) {
+    const o = i * OUT_STRIDE;
+    if (Math.max(inst.out[o], inst.out[o + 1], inst.out[o + 2], inst.out[o + 3]) * inst.out[o + 6] > 0.02) lit++;
+  }
+  return { compiled, perFrameMs, swatch, logs, litFixtures: lit, fixtureCount: fx.length };
+}
+
+function rgbHex(r: number, g: number, b: number) {
+  const c = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0");
+  return `#${c(r)}${c(g)}${c(b)}`;
+}
+
+export function syntheticFixtures(): SandboxFixture[] {
+  const pts: [number, number, SandboxFixture["kind"]][] = [[0.1, 0.1, "wash"], [0.9, 0.1, "wash"], [0.1, 0.9, "wash"], [0.9, 0.9, "wash"], [0.4, 0.5, "spot"], [0.6, 0.5, "spot"]];
+  return pts.map(([nx, ny, kind], i) => ({
+    id: `f${i}`, name: `${kind} ${i}`, index: i, x: nx * 10, y: ny * 8, nx, ny,
+    dist: Math.min(1, Math.hypot(nx - 0.5, ny - 0.5) / 0.7071), angle: Math.atan2(ny - 0.5, nx - 0.5), rotation: 0,
+    kind, tags: [kind], isColor: kind !== "spot",
+  }));
+}

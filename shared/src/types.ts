@@ -1,6 +1,6 @@
 // Core domain types shared between server and web.
 
-export type Role = "admin" | "guest" | "viewer";
+export type Role = "admin" | "editor" | "guest" | "viewer";
 
 /** A channel in a fixture profile. `fn` says what the engine writes there. */
 export type ChannelFn =
@@ -248,6 +248,8 @@ export interface AgentSettings {
 
 export interface SharingSettings {
   guestPermission: "view" | "control" | "edit";
+  /** Display name of the room/venue shown in the header. */
+  venueName: string;
   /** Public URL base used in share links (auto-detected if empty). */
   publicUrl: string;
 }

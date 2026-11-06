@@ -1,0 +1,100 @@
+import type { HueLightInfo } from "@lightesota/shared";
+
+/** Minimal Hue Bridge v1 API client with pairing and a rate-limited color updater. */
+export class HueBridge {
+  private queue = new Map<string, { xy: [number, number]; bri: number; on: boolean }>();
+  private lastSent = new Map<string, { xy: [number, number]; bri: number; on: boolean; at: number }>();
+  private timer: NodeJS.Timeout | null = null;
+  lastError: string | undefined;
+  connected = false;
+  lightCount = 0;
+
+  constructor(public ip: string, public username: string, public rateHz: number) {}
+
+  private url(path: string) { return `http://${this.ip}/api/${this.username}${path}`; }
+
+  async pair(): Promise<string> {
+    const res = await fetch(`http://${this.ip}/api`, {
+      method: "POST", body: JSON.stringify({ devicetype: "lightesota#server" }), signal: AbortSignal.timeout(4000),
+    });
+    const body = (await res.json()) as Array<{ success?: { username: string }; error?: { type: number; description: string } }>;
+    const first = body[0];
+    if (first?.success?.username) { this.username = first.success.username; return this.username; }
+    throw new Error(first?.error?.description ?? "unexpected bridge response");
+  }
+
+  async listLights(): Promise<HueLightInfo[]> {
+    if (!this.username) throw new Error("Hue bridge is not paired yet");
+    const res = await fetch(this.url("/lights"), { signal: AbortSignal.timeout(4000) });
+    const body = (await res.json()) as Record<string, { name: string; type: string; state: { on: boolean; reachable: boolean } }> | Array<{ error: { description: string } }>;
+    if (Array.isArray(body)) throw new Error(body[0]?.error?.description ?? "bridge error");
+    const lights = Object.entries(body).map(([id, l]) => ({ id, name: l.name, type: l.type, reachable: l.state?.reachable ?? true, on: l.state?.on ?? false }));
+    this.connected = true;
+    this.lastError = undefined;
+    this.lightCount = lights.length;
+    return lights;
+  }
+
+  /** Queue a color for a light; the flush loop sends at most rateHz commands per second. */
+  setColor(lightId: string, r: number, g: number, b: number, dim: number) {
+    const bri = Math.round(Math.max(0, Math.min(1, Math.max(r, g, b) * dim)) * 254);
+    const on = bri > 0;
+    const xy = rgbToXy(r, g, b);
+    this.queue.set(lightId, { xy, bri: Math.max(1, bri), on });
+    this.ensureLoop();
+  }
+
+  private ensureLoop() {
+    if (this.timer) return;
+    this.timer = setInterval(() => void this.flushOne(), 1000 / Math.max(1, this.rateHz));
+  }
+
+  stop() { if (this.timer) clearInterval(this.timer); this.timer = null; }
+
+  private async flushOne() {
+    if (!this.username) return;
+    // Pick the queued light whose change is largest / oldest.
+    let bestId: string | null = null, bestScore = -1;
+    const now = Date.now();
+    for (const [id, s] of this.queue) {
+      const last = this.lastSent.get(id);
+      let score = 1;
+      if (last) {
+        const d = Math.abs(last.bri - s.bri) / 254 + Math.hypot(last.xy[0] - s.xy[0], last.xy[1] - s.xy[1]) * 4 + (last.on !== s.on ? 1 : 0);
+        const age = (now - last.at) / 1000;
+        if (d < 0.02 && age < 10) { this.queue.delete(id); continue; }
+        score = d + age * 0.05;
+      } else score = 10;
+      if (score > bestScore) { bestScore = score; bestId = id; }
+    }
+    if (!bestId) return;
+    const s = this.queue.get(bestId)!;
+    this.queue.delete(bestId);
+    const body = s.on ? { on: true, xy: s.xy, bri: s.bri, transitiontime: 1 } : { on: false, transitiontime: 1 };
+    try {
+      const res = await fetch(this.url(`/lights/${bestId}/state`), { method: "PUT", body: JSON.stringify(body), signal: AbortSignal.timeout(2000) });
+      const out = (await res.json()) as Array<{ error?: { description: string } }>;
+      const err = out.find((o) => o.error)?.error?.description;
+      if (err) throw new Error(err);
+      this.lastSent.set(bestId, { ...s, at: now });
+      this.connected = true;
+      this.lastError = undefined;
+    } catch (e) {
+      this.lastError = (e as Error).message;
+      this.connected = false;
+    }
+  }
+}
+
+/** sRGB -> CIE xy (Hue "wide gamut" friendly). */
+export function rgbToXy(r: number, g: number, b: number): [number, number] {
+  const lin = (c: number) => (c > 0.04045 ? Math.pow((c + 0.055) / 1.055, 2.4) : c / 12.92);
+  r = lin(r); g = lin(g); b = lin(b);
+  const X = r * 0.664511 + g * 0.154324 + b * 0.162028;
+  const Y = r * 0.283881 + g * 0.668433 + b * 0.047685;
+  const Z = r * 0.000088 + g * 0.072310 + b * 0.986039;
+  const sum = X + Y + Z;
+  if (sum === 0) return [0.3127, 0.329];
+  return [round4(X / sum), round4(Y / sum)];
+}
+const round4 = (v: number) => Math.round(v * 10000) / 10000;

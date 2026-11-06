@@ -76,6 +76,10 @@ export function requiredRole(msg: ClientMessage): Role {
     case "playPlaylist": case "stopPlaylist": case "playlistNext": case "playlistPrev":
     case "testFixture":
       return "guest";
+    case "saveScene": case "updateScene": case "deleteScene": case "reorderScenes":
+    case "savePlaylist": case "deletePlaylist": case "savePattern": case "deletePattern":
+    case "duplicatePattern": case "agent":
+      return "editor";
     default:
       return "admin";
   }
@@ -83,7 +87,7 @@ export function requiredRole(msg: ClientMessage): Role {
 
 /** Guest permission level -> effective role for messages. */
 export function roleAllows(role: Role, needed: Role): boolean {
-  const rank: Record<Role, number> = { viewer: 0, guest: 1, admin: 2 };
+  const rank: Record<Role, number> = { viewer: 0, guest: 1, editor: 2, admin: 3 };
   return rank[role] >= rank[needed];
 }
 
