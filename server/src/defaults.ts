@@ -18,7 +18,7 @@ export function defaultRig(): Rig {
       height: 8,
       gridStep: 0.5,
       shapes: [
-        { id: "network", kind: "rect", x: 3.5, y: 0.3, w: 3, h: 1.2, text: "Network", color: "#8884" },
+        { id: "network", kind: "rect", x: 4.25, y: 0.3, w: 1.5, h: 0.6, text: "Network", color: "#8884" },
         { id: "balcony", kind: "rect", x: 0, y: 7.55, w: 10, h: 0.45, text: "Balcony", color: "#8883" },
       ],
     },
