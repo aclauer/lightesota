@@ -66,10 +66,11 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
       ctx.clearRect(0, 0, s.w, s.h);
       const X = (x: number) => s.ox + x * s.scale, Y = (y: number) => s.oy + y * s.scale;
       // Room
-      ctx.fillStyle = isDark ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.6)";
+      // Floor: dark enough in both themes that colored and white light reads.
+      ctx.fillStyle = isDark ? "rgba(0,0,0,0.35)" : "#3a3d47";
       ctx.fillRect(X(0), Y(0), rig.room.width * s.scale, rig.room.height * s.scale);
       // Grid
-      ctx.strokeStyle = line; ctx.lineWidth = 1;
+      ctx.strokeStyle = isDark ? line : "rgba(255,255,255,0.12)"; ctx.lineWidth = 1;
       const step = rig.room.gridStep || 0.5;
       const gridEvery = s.scale * step < 14 ? step * 2 : step;
       ctx.beginPath();
@@ -121,7 +122,7 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
         const cx = X(f.x), cy = Y(f.y);
         ctx.save();
         ctx.translate(cx, cy); ctx.rotate((f.rotation * Math.PI) / 180);
-        const fill = !f.enabled ? (isDark ? "#333" : "#ccc") : c ? frameToCss(c) : surface;
+        const fill = !f.enabled ? "#2a2c33" : c ? frameToCss(c) : (isDark ? surface : "#1f2129");
         ctx.fillStyle = fill;
         ctx.strokeStyle = f.id === selectedId ? accent : s.hover === f.id ? fg : fg3;
         ctx.lineWidth = f.id === selectedId ? 3 : 1.5;
@@ -136,15 +137,18 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
         if (!f.enabled) { ctx.strokeStyle = fg3; ctx.beginPath(); ctx.moveTo(-r, -r); ctx.lineTo(r, r); ctx.stroke(); }
         ctx.restore();
         if (showLabels) {
-          ctx.fillStyle = f.id === selectedId ? accent : fg3;
+          // Halo so labels stay readable over glows in either theme.
+          ctx.lineWidth = 3; ctx.strokeStyle = isDark ? "rgba(0,0,0,0.75)" : "rgba(40,42,50,0.85)"; ctx.lineJoin = "round";
+          ctx.strokeText(f.name, cx, cy + r + 6);
+          ctx.fillStyle = f.id === selectedId ? accent : "#e6e4dd";
           ctx.fillText(f.name, cx, cy + r + 6);
-          if (mode === "edit" && f.address) { ctx.fillStyle = fg3; ctx.fillText(`@${f.address}`, cx, cy + r + 19); }
+          if (mode === "edit" && f.address) { ctx.strokeText(`@${f.address}`, cx, cy + r + 19); ctx.fillStyle = "#b9b7b0"; ctx.fillText(`@${f.address}`, cx, cy + r + 19); }
         }
       }
-      // Scale bar
-      ctx.fillStyle = fg3; ctx.font = "10px system-ui"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
-      ctx.fillRect(12, s.h - 14, s.scale, 2);
-      ctx.fillText("1 m", 14, s.h - 16);
+      // Scale bar (bottom right)
+      ctx.fillStyle = fg3; ctx.font = "10px system-ui"; ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+      ctx.fillRect(s.w - 12 - s.scale, s.h - 12, s.scale, 2);
+      ctx.fillText("1 m", s.w - 12, s.h - 14);
       void bg;
     };
     raf = requestAnimationFrame(draw);

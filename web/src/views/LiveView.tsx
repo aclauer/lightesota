@@ -36,7 +36,7 @@ export function LiveView() {
           </div>
           <div className="row">
             {control && <button className="btn sm" onClick={() => setSaveOpen(true)}><Save /> Save scene</button>}
-            {pattern && can("editor") && <button className="btn sm ghost" onClick={() => openEditor(pattern.id)}><Code2 /> Edit code</button>}
+            {pattern && can("editor") && <button className="btn sm ghost" onClick={() => openEditor(pattern.id)}><Code2 /> Edit</button>}
           </div>
         </div>
         <div className="stage-card">

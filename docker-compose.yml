@@ -1,0 +1,11 @@
+services:
+  lightesota:
+    build: .
+    restart: unless-stopped
+    # Host networking so Art-Net UDP reaches the ODE and the upstream listener can bind 6454.
+    network_mode: host
+    environment:
+      - PORT=8787
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./data:/data
