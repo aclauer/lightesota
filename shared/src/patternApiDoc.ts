@@ -49,6 +49,9 @@ ctx fields, read-only unless noted:
                  nx/ny are 0..1 across the room bounding box; dist is 0..1 from the room center;
                  angle is radians from the room center; kind is "wash" | "spot" | "hue" | "other";
                  isColor is false for intensity-only fixtures (they take the brightness of the color).
+  ctx.audio      microphone analysis when someone has the mic on: { active, level, bass, mid, high, onset, bpm }
+                 (0..1 values; onset is true on the frame a beat was detected; active is false when nobody
+                 streams audio, so always fall back to ctx.beat or ctx.t in that case)
   ctx.random()   deterministic PRNG for this activation
   ctx.set(fixtureOrIndex, color, extras?)  paint a fixture. color is [r,g,b] 0..1 or a "#rrggbb" string.
                  extras: { w, a, uv, dim, strobe } each 0..1. dim defaults to 1; strobe > 0 enables the

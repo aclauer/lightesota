@@ -168,7 +168,14 @@ export interface ShowState {
   playlist: PlaylistPlayback | null;
   /** True when a configured upstream Art-Net source is being passed through untouched. */
   released: boolean;
+  /** Server time (ms) at which the show blacks out, or null. */
+  sleepAt: number | null;
+  /** Microphone analysis: who is sending and whether BPM follows the detected tempo. */
+  audio: { active: boolean; source: string | null; followBpm: boolean; level: number; bpm: number | null };
 }
+
+/** One microphone analysis frame sent by a browser. All 0..1 except bpm. */
+export interface AudioFrame { level: number; bass: number; mid: number; high: number; onset: boolean; bpm: number | null; }
 
 export interface Scene {
   id: string;

@@ -30,9 +30,13 @@ export interface CompiledPattern {
   invoke: (fn: (ctx: RenderCtx) => void, ctx: RenderCtx, timeoutMs: number) => void;
 }
 
+export interface AudioState { active: boolean; level: number; bass: number; mid: number; high: number; onset: boolean; bpm: number | null; }
+export const SILENT_AUDIO: AudioState = { active: false, level: 0, bass: 0, mid: 0, high: 0, onset: false, bpm: null };
+
 export interface RenderCtx {
   t: number; dt: number; frame: number; bpm: number; beat: number; beatPhase: number;
   bar: number; barPhase: number; onBeat: boolean;
+  audio: AudioState;
   params: ParamValues; state: Record<string, unknown>;
   n: number; fixtures: SandboxFixture[];
   washes: SandboxFixture[]; spots: SandboxFixture[]; hue: SandboxFixture[];
@@ -174,6 +178,7 @@ export class PatternInstance {
     const idx = (f: SandboxFixture | number) => (typeof f === "number" ? f : f.index);
     const ctx: RenderCtx = {
       t: 0, dt: 0, frame: 0, bpm: 120, beat: 0, beatPhase: 0, bar: 0, barPhase: 0, onBeat: false,
+      audio: { ...SILENT_AUDIO },
       params: this.params, state: {},
       n: fixtures.length, fixtures,
       washes: fixtures.filter((f) => f.kind === "wash"),
@@ -218,8 +223,9 @@ export class PatternInstance {
     (this as { out: Float32Array }).out = new Float32Array(Math.max(1, fixtures.length) * OUT_STRIDE);
   }
 
-  render(dt: number, bpm: number, beat: number) {
+  render(dt: number, bpm: number, beat: number, audio: AudioState = SILENT_AUDIO) {
     const c = this.ctx;
+    c.audio = audio;
     this.t += dt;
     c.t = this.t; c.dt = dt; c.frame = this.frame++;
     c.bpm = bpm; c.beat = beat; c.beatPhase = fract(beat);

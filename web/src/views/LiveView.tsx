@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Code2, Flashlight, RotateCcw, Save, X } from "lucide-react";
+import { useEffect, useState as useStateReact } from "react";
+import { Code2, Flashlight, Mic, MicOff, Moon, RotateCcw, Save, X } from "lucide-react";
 import { findProfile, type FixtureOverride } from "@lightesota/shared";
 import { useStore } from "../state/store";
 import { Stage } from "../components/Stage";
@@ -71,6 +72,7 @@ export function LiveView() {
             <span className="lbl">Master</span><span className="val">{Math.round(show.master * 100)}%</span>
             <input className="ctl accent" type="range" min={0} max={1} step={0.01} value={show.master} disabled={!control} onChange={(e) => send({ type: "setMaster", master: Number(e.target.value) })} aria-label="Master" />
           </div>
+          <SleepTimer />
           {Object.keys(show.overrides).length > 0 && control && (
             <div className="row" style={{ marginTop: 8 }}>
               <span className="pill warn">{Object.keys(show.overrides).length} fixture override{Object.keys(show.overrides).length > 1 ? "s" : ""}</span>
@@ -84,6 +86,7 @@ export function LiveView() {
             </div>
           )}
         </div>
+        <SoundCard />
         {scenes.length > 0 && (
           <div className="card">
             <h3>Scenes</h3>
@@ -99,6 +102,59 @@ export function LiveView() {
         )}
       </div>
       {saveOpen && <SaveSceneModal onClose={() => setSaveOpen(false)} />}
+    </div>
+  );
+}
+
+function SleepTimer() {
+  const show = useStore((s) => s.show)!;
+  const send = useStore((s) => s.send);
+  const can = useStore((s) => s.can);
+  const [, tick] = useStateReact(0);
+  useEffect(() => { if (!show.sleepAt) return; const t = setInterval(() => tick((x) => x + 1), 1000); return () => clearInterval(t); }, [show.sleepAt]);
+  const control = can("guest");
+  const remaining = show.sleepAt ? Math.max(0, show.sleepAt - Date.now()) : 0;
+  const mm = Math.floor(remaining / 60000), ss = Math.floor((remaining % 60000) / 1000);
+  return (
+    <div className="row" style={{ marginTop: 10, justifyContent: "space-between" }}>
+      <span className="lbl muted" style={{ fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 6 }}><Moon style={{ width: 14, height: 14 }} /> Sleep timer</span>
+      {show.sleepAt ? (
+        <span className="row"><span className="pill accent tabular">off in {mm}:{String(ss).padStart(2, "0")}</span><button className="btn sm ghost" disabled={!control} onClick={() => send({ type: "setSleep", minutes: null })}>Cancel</button></span>
+      ) : (
+        <span className="seg">{[15, 30, 60, 120].map((m) => <button key={m} disabled={!control} onClick={() => send({ type: "setSleep", minutes: m })}>{m >= 60 ? `${m / 60} h` : `${m} m`}</button>)}</span>
+      )}
+    </div>
+  );
+}
+
+function SoundCard() {
+  const show = useStore((s) => s.show)!;
+  const mic = useStore((s) => s.mic);
+  const startMic = useStore((s) => s.startMic);
+  const stopMic = useStore((s) => s.stopMic);
+  const send = useStore((s) => s.send);
+  const can = useStore((s) => s.can);
+  const myName = useStore((s) => s.myName);
+  const control = can("guest");
+  const remote = show.audio.active && !mic.running;
+  const level = mic.running ? mic.level : show.audio.level;
+  return (
+    <div className="card">
+      <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+        <h3 style={{ margin: 0 }}>Sound</h3>
+        {show.audio.active && <span className="pill ok">{mic.running ? "your mic" : `via ${show.audio.source ?? "someone"}`}</span>}
+      </div>
+      <div className="stack">
+        <div className="progress" style={{ height: 8 }}><i style={{ width: `${Math.round(level * 100)}%`, transition: "width 80ms linear" }} /></div>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          {mic.running ? <button className="btn sm" onClick={stopMic}><MicOff /> Stop listening</button>
+            : <button className="btn sm" disabled={!control || !mic.supported || remote} onClick={() => void startMic()} title={remote ? `${show.audio.source} is already streaming audio` : ""}><Mic /> {remote ? "Mic in use" : "Use this device's mic"}</button>}
+          <span className="hint tabular">{show.audio.bpm ? `~${show.audio.bpm} BPM detected` : mic.running ? "listening…" : ""}</span>
+        </div>
+        <label className="row"><button className={`switch ${show.audio.followBpm ? "on" : ""}`} role="switch" aria-checked={show.audio.followBpm} disabled={!control} onClick={() => send({ type: "setFollowMicBpm", on: !show.audio.followBpm })} /> <span style={{ fontSize: 12.5 }}>Follow the detected tempo</span></label>
+        {mic.error && <div className="err">{mic.error}</div>}
+        {!mic.running && !show.audio.active && <p className="hint">Patterns tagged <span className="pill">audio</span> react to the music through a microphone. Put the device near the speakers. {myName ? "" : ""}</p>}
+      </div>
     </div>
   );
 }

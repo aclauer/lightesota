@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { nanoid } from "nanoid";
 import {
   defaultParams, sanitizeParams,
-  type FixtureOverride, type ParamValues, type Rig, type Scene, type Settings, type ShowState, type Playlist,
+  type AudioFrame, type FixtureOverride, type ParamValues, type Rig, type Scene, type Settings, type ShowState, type Playlist,
 } from "@lightesota/shared";
 import { Engine } from "./engine/engine.js";
 import type { Library } from "./library.js";
@@ -27,6 +27,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
       patternId: null, params: {}, outgoingPatternId: null, crossfadeMs: 800, master: 1, blackout: false, speed: 1,
       transport: { bpm: 120, beatOrigin: Date.now(), running: true },
       overrides: {}, solo: [], activeSceneId: null, playlist: null, released: false,
+      sleepAt: null, audio: { active: false, source: null, followBpm: false, level: 0, bpm: null },
     };
     this.state = {
       ...base,
@@ -35,7 +36,10 @@ export class ShowController extends EventEmitter<ShowEvents> {
       playlist: null,
       blackout: false,
       outgoingPatternId: null,
+      sleepAt: null,
+      audio: { active: false, source: null, followBpm: saved.audio?.followBpm ?? false, level: 0, bpm: null },
     };
+    setInterval(() => this.audioTick(), 500).unref();
     this.engine.on("patternLoaded", ({ id, params }) => {
       if (id === this.state.patternId) { this.state.params = params; this.state.outgoingPatternId = null; this.changed(); }
     });
@@ -60,7 +64,56 @@ export class ShowController extends EventEmitter<ShowEvents> {
     this.changed();
   }
 
-  stop() { this.engine.stop(); this.stopPlaylist(); this.file.flush(); }
+  stop() { this.engine.stop(); this.stopPlaylist(); if (this.sleepTimer) clearTimeout(this.sleepTimer); this.file.flush(); }
+
+  // ---- audio ----
+  private audioSourceId: string | null = null;
+  private lastBpmFollow = 0;
+  setAudio(clientId: string, clientName: string, frame: AudioFrame | null) {
+    if (frame === null) {
+      if (this.audioSourceId === clientId) { this.audioSourceId = null; this.engine.setAudio(null); this.state.audio = { ...this.state.audio, active: false, source: null, level: 0, bpm: null }; this.changed(); }
+      return;
+    }
+    // First come, first served: one microphone drives the show until it stops.
+    if (this.audioSourceId && this.audioSourceId !== clientId && this.engine.audioActive) return;
+    this.audioSourceId = clientId;
+    this.engine.setAudio(frame);
+    const a = this.state.audio;
+    const changed = !a.active || a.source !== clientName || Math.abs(a.level - frame.level) > 0.08 || a.bpm !== frame.bpm;
+    this.state.audio = { ...a, active: true, source: clientName, level: frame.level, bpm: frame.bpm };
+    if (a.followBpm && frame.bpm && frame.onset && Date.now() - this.lastBpmFollow > 2000 && Math.abs(frame.bpm - this.engine.bpm) >= 1) {
+      this.lastBpmFollow = Date.now();
+      this.engine.setBpm(frame.bpm);
+      this.engine.beatOrigin = Date.now();
+    }
+    if (changed) this.changed();
+  }
+  setFollowMicBpm(on: boolean) { this.state.audio = { ...this.state.audio, followBpm: on }; this.changed(); }
+  private audioTick() {
+    if (this.state.audio.active && !this.engine.audioActive) {
+      this.audioSourceId = null;
+      this.state.audio = { ...this.state.audio, active: false, source: null, level: 0, bpm: null };
+      this.changed();
+    }
+  }
+
+  // ---- sleep timer ----
+  private sleepTimer: NodeJS.Timeout | null = null;
+  setSleep(minutes: number | null) {
+    if (this.sleepTimer) clearTimeout(this.sleepTimer);
+    this.sleepTimer = null;
+    if (minutes === null || !(minutes > 0)) { this.state.sleepAt = null; this.changed(); return; }
+    const ms = Math.min(24 * 3600, minutes * 60) * 1000;
+    this.state.sleepAt = Date.now() + ms;
+    this.sleepTimer = setTimeout(() => {
+      this.sleepTimer = null;
+      this.state.sleepAt = null;
+      this.stopPlaylist(false);
+      this.setBlackout(true);
+      this.emit("toast", { level: "info", text: "Sleep timer: lights off" });
+    }, ms);
+    this.changed();
+  }
 
   rigChanged() { this.engine.setRig(this.getRig()); }
   settingsChanged() { this.engine.start(this.getSettings().artnet.fps); }

@@ -5,6 +5,7 @@ import type {
 } from "@lightesota/shared";
 import { roleAllows } from "@lightesota/shared";
 import { WsClient, wsUrl } from "../lib/ws";
+import { AudioAnalyzer } from "../lib/audio";
 import { applyTheme, readThemePref, type ThemePref } from "../lib/theme";
 
 export type View = "live" | "patterns" | "scenes" | "playlists" | "stage" | "agent" | "settings";
@@ -41,8 +42,11 @@ export interface AppState {
   selectedFixtureId: string | null;
   editorPatternId: string | null;
   agent: AgentState;
+  mic: { running: boolean; level: number; bpm: number | null; error: string | null; supported: boolean };
 
   // actions
+  startMic: () => Promise<void>;
+  stopMic: () => void;
   send: (msg: ClientMessage) => void;
   request: <T = unknown>(msg: ClientMessage) => Promise<T>;
   can: (role: Role) => boolean;
@@ -60,6 +64,13 @@ let toastSeq = 1;
 
 export const useStore = create<AppState>((set, get) => {
   const ws = new WsClient(wsUrl());
+  const analyzer = new AudioAnalyzer();
+  let lastMicUi = 0;
+  analyzer.onFrame = (f) => {
+    ws.send({ type: "audio", frame: f });
+    const now = performance.now();
+    if (now - lastMicUi > 100 || f.onset) { lastMicUi = now; set((s) => ({ mic: { ...s.mic, level: f.level, bpm: f.bpm } })); }
+  };
   const initialTheme = readThemePref();
   applyTheme(initialTheme);
 
@@ -146,7 +157,18 @@ export const useStore = create<AppState>((set, get) => {
     theme: initialTheme,
     selectedFixtureId: null, editorPatternId: null,
     agent: { conversations: [], current: null, busy: {} },
+    mic: { running: false, level: 0, bpm: null, error: null, supported: typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia },
 
+    startMic: async () => {
+      try {
+        await analyzer.start();
+        set((s) => ({ mic: { ...s.mic, running: true, error: null } }));
+      } catch (e) {
+        const msg = (e as Error).name === "NotAllowedError" ? "Microphone access was denied." : location.protocol !== "https:" && location.hostname !== "localhost" ? "Browsers only allow the microphone on https or localhost. Open the console on this machine, or serve it over https." : (e as Error).message;
+        set((s) => ({ mic: { ...s.mic, running: false, error: msg } }));
+      }
+    },
+    stopMic: () => { analyzer.stop(); ws.send({ type: "audio", frame: null }); set((s) => ({ mic: { ...s.mic, running: false, level: 0, bpm: null } })); },
     send: (msg) => ws.send(msg),
     request: (msg) => ws.request(msg),
     can: (role) => roleAllows(get().role, role),

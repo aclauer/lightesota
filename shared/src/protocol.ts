@@ -1,5 +1,5 @@
 import type {
-  FixtureOverride, FrameColor, OutputStatus, ParamValues, Pattern, PatternMeta, Playlist,
+  AudioFrame, FixtureOverride, FrameColor, OutputStatus, ParamValues, Pattern, PatternMeta, Playlist,
   Presence, Rig, Role, Scene, Settings, ShowState, HueLightInfo,
 } from "./types.js";
 
@@ -64,7 +64,10 @@ export type ClientMessage =
   | { type: "agent"; command: AgentCommand }
   | { type: "huePair"; reqId?: string }
   | { type: "hueListLights"; reqId?: string }
-  | { type: "testFixture"; fixtureId: string; seconds?: number };
+  | { type: "testFixture"; fixtureId: string; seconds?: number }
+  | { type: "audio"; frame: AudioFrame | null }
+  | { type: "setFollowMicBpm"; on: boolean }
+  | { type: "setSleep"; minutes: number | null };
 
 export function requiredRole(msg: ClientMessage): Role {
   switch (msg.type) {
@@ -74,7 +77,7 @@ export function requiredRole(msg: ClientMessage): Role {
     case "setCrossfade": case "setBpm": case "tap": case "resync": case "nudge":
     case "setOverride": case "clearOverrides": case "setSolo": case "recallScene":
     case "playPlaylist": case "stopPlaylist": case "playlistNext": case "playlistPrev":
-    case "testFixture":
+    case "testFixture": case "audio": case "setFollowMicBpm": case "setSleep":
       return "guest";
     case "saveScene": case "updateScene": case "deleteScene": case "reorderScenes":
     case "savePlaylist": case "deletePlaylist": case "savePattern": case "deletePattern":

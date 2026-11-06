@@ -30,7 +30,7 @@ export class WsHub {
       this.broadcastPresence();
       ws.on("message", (data) => this.onMessage(client, data.toString()));
       ws.on("pong", () => { client.alive = true; });
-      ws.on("close", () => { this.clients.delete(id); this.broadcastPresence(); });
+      ws.on("close", () => { this.clients.delete(id); ctx.show.setAudio(id, client.name, null); this.broadcastPresence(); });
       ws.on("error", () => { /* close follows */ });
     });
     setInterval(() => {
@@ -211,6 +211,9 @@ export class WsHub {
           .catch((e: Error) => this.send(client, { type: "error", text: `Hue: ${e.message}`, reqId: msg.reqId }));
         return;
       }
+      case "audio": show.setAudio(client.id, client.name, msg.frame); return;
+      case "setFollowMicBpm": show.setFollowMicBpm(!!msg.on); return;
+      case "setSleep": show.setSleep(msg.minutes === null ? null : Number(msg.minutes)); return;
       case "testFixture": {
         // Flash a single fixture white for a moment via a temporary override.
         const secs = Math.min(10, Math.max(0.5, msg.seconds ?? 2));

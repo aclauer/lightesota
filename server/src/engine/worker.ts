@@ -1,6 +1,6 @@
 // Worker thread: compiles patterns in a vm sandbox and renders frames on request.
 import { parentPort } from "node:worker_threads";
-import { compilePattern, OUT_STRIDE, PatternInstance, type SandboxFixture } from "./sandbox.js";
+import { compilePattern, OUT_STRIDE, PatternInstance, SILENT_AUDIO, type AudioState, type SandboxFixture } from "./sandbox.js";
 import type { ParamValues } from "@lightesota/shared";
 
 export type ToWorker =
@@ -9,7 +9,7 @@ export type ToWorker =
   | { type: "unload"; slot: "a" | "b" }
   | { type: "params"; slot: "a" | "b"; params: ParamValues }
   | { type: "fixtures"; fixtures: SandboxFixture[] }
-  | { type: "render"; dt: number; bpm: number; beat: number; mix: number };
+  | { type: "render"; dt: number; bpm: number; beat: number; mix: number; audio?: AudioState };
 
 export type FromWorker =
   | { type: "loaded"; slot: "a" | "b"; id: string; params: ParamValues }
@@ -58,8 +58,9 @@ port.on("message", (msg: ToWorker) => {
       const n = Math.max(1, fixtures.length);
       const buf = new Float32Array(n * OUT_STRIDE);
       const a = slots.a, b = slots.b;
-      if (a) a.render(msg.dt, msg.bpm, msg.beat);
-      if (b) b.render(msg.dt, msg.bpm, msg.beat);
+      const audio = msg.audio ?? SILENT_AUDIO;
+      if (a) a.render(msg.dt, msg.bpm, msg.beat, audio);
+      if (b) b.render(msg.dt, msg.bpm, msg.beat, audio);
       const mix = a && b ? msg.mix : a ? 1 : 0;
       if (a && b) {
         for (let i = 0; i < buf.length; i++) buf[i] = b.out[i] * (1 - mix) + a.out[i] * mix;

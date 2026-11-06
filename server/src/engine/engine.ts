@@ -3,7 +3,7 @@ import { Worker } from "node:worker_threads";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { findProfile, type Fixture, type FixtureOverride, type FrameColor, type ParamValues, type Rig } from "@lightesota/shared";
-import { OUT_STRIDE, type SandboxFixture } from "./sandbox.js";
+import { OUT_STRIDE, SILENT_AUDIO, type AudioState, type SandboxFixture } from "./sandbox.js";
 import type { FromWorker, ToWorker } from "./worker.js";
 
 export interface EngineFrame {
@@ -60,6 +60,18 @@ export class Engine extends EventEmitter<EngineEvents> {
   blackout = false;
   overrides: Record<string, FixtureOverride> = {};
   solo = new Set<string>();
+  private audio: AudioState = { ...SILENT_AUDIO };
+  private audioAt = 0;
+  private pendingOnset = false;
+
+  /** Latest microphone frame from a client; onsets are latched until the next render. */
+  setAudio(a: Omit<AudioState, "active"> | null) {
+    if (!a) { this.audio = { ...SILENT_AUDIO }; this.audioAt = 0; return; }
+    if (a.onset) this.pendingOnset = true;
+    this.audio = { ...a, active: true };
+    this.audioAt = Date.now();
+  }
+  get audioActive() { return Date.now() - this.audioAt < 2000; }
 
   // crossfade
   private currentId: string | null = null;
@@ -240,7 +252,9 @@ export class Engine extends EventEmitter<EngineEvents> {
     }
     this.awaiting = true;
     this.awaitingSince = now;
-    this.post({ type: "render", dt, bpm: this.bpm, beat: this.beatAt(now), mix });
+    const audio: AudioState = this.audioActive ? { ...this.audio, onset: this.pendingOnset } : { ...SILENT_AUDIO };
+    this.pendingOnset = false;
+    this.post({ type: "render", dt, bpm: this.bpm, beat: this.beatAt(now), mix, audio });
     this.frameCount++;
     if (now - this.fpsWindowStart >= 1000) {
       this.measuredFps = (this.frameCount * 1000) / (now - this.fpsWindowStart);
