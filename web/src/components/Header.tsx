@@ -23,7 +23,7 @@ export function Header() {
   return (
     <header className="hdr">
       <div className="brand">
-        <span className="lamp" style={show?.blackout ? { background: "var(--fg-3)", boxShadow: "none" } : undefined} />
+        <span className={`lamp ${show?.lasers.armed ? "laser" : ""}`} style={show?.blackout && !show?.lasers.armed ? { background: "var(--fg-3)", boxShadow: "none" } : undefined} title={show?.lasers.armed ? "Lasers armed" : undefined} />
         <span>Lightesota</span>
         {settings?.sharing.venueName && <span className="venue">· {settings.sharing.venueName}</span>}
       </div>
