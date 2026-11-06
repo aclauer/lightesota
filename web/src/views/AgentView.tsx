@@ -14,7 +14,6 @@ export function AgentView() {
   const agent = useStore((s) => s.agent);
   const send = useStore((s) => s.send);
   const status = useStore((s) => s.status);
-  const settings = useStore((s) => s.settings);
   const can = useStore((s) => s.can);
   const editorPatternId = useStore((s) => s.editorPatternId);
   const show = useStore((s) => s.show);
@@ -64,7 +63,7 @@ export function AgentView() {
             <div className="stack" style={{ maxWidth: 640 }}>
               <div className="row"><Bot /> <h2 style={{ fontSize: 16 }}>Describe a look and the agent will write and apply it</h2></div>
               <p className="muted">It knows the rig (the enabled fixtures on the Stage tab). It writes a pattern, test-renders it, applies it, and exposes the tunable parts as sliders on the Live tab. Ask for changes in plain language.</p>
-              <p className="hint">Model: {settings?.agent.model} · effort {settings?.agent.effort} (change in Settings)</p>
+              <p className="hint">Each request takes about 10 to 30 seconds.</p>
             </div>
           ) : conv.messages.map((m) => <Message key={m.id} m={m} />)}
         </div>

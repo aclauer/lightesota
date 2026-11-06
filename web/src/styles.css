@@ -249,7 +249,8 @@ input[type=range]:disabled { opacity: 0.4; }
 /* Agent */
 .agent { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 12px; height: 100%; min-height: 0; }
 .agent .convs { overflow: auto; min-height: 0; display: grid; gap: 6px; align-content: start; }
-.agent .chat { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.agent .chat { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.agent .chat h2 { text-wrap: balance; }
 .agent .msgs { overflow: auto; padding: 14px; display: grid; gap: 12px; align-content: start; }
 .msg { display: grid; gap: 6px; max-width: 760px; }
 .msg.user { justify-self: end; }
@@ -262,9 +263,9 @@ input[type=range]:disabled { opacity: 0.4; }
 .toolcall pre { margin: 0; font-size: 11.5px; max-height: 160px; overflow: auto; color: var(--fg-2); white-space: pre-wrap; word-break: break-word; }
 .toolcall.err { border-color: var(--danger); }
 .composer { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); align-items: flex-end; background: var(--bg-elev); }
-.composer textarea { flex: 1; resize: none; max-height: 140px; min-height: 40px; }
-.suggestions { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 14px 12px; }
-.suggestions button { font-size: 12.5px; }
+.composer textarea { flex: 1; min-width: 0; resize: none; max-height: 140px; min-height: 40px; }
+.suggestions { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 14px 12px; min-width: 0; }
+.suggestions button { font-size: 12.5px; white-space: normal; text-align: left; max-width: 100%; }
 @media (max-width: 900px) { .agent { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .agent .convs { display: flex; overflow-x: auto; gap: 6px; } .agent .convs .plist { display: flex; gap: 6px; } .agent .convs .plist button { width: auto; white-space: nowrap; } }
 
 /* Toasts */
