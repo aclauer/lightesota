@@ -12,9 +12,10 @@ export type View = "live" | "patterns" | "scenes" | "playlists" | "stage" | "age
 export interface Toast { id: number; level: "info" | "success" | "warning" | "error"; text: string; }
 
 interface AgentState {
-  conversations: { id: string; title: string; updatedAt: number }[];
+  conversations: { id: string; title: string; updatedAt: number; ownerName?: string; mine: boolean }[];
   current: AgentConversation | null;
   busy: Record<string, boolean>;
+  all: boolean;
 }
 
 export interface AppState {
@@ -113,6 +114,8 @@ export const useStore = create<AppState>((set, get) => {
       switch (ev.type) {
         case "conversations":
           a.conversations = ev.conversations;
+          a.all = ev.all;
+          if (a.current && !ev.conversations.some((c) => c.id === a.current!.id)) a.current = null;
           // Open the most recent conversation when none is open yet.
           if (!a.current && ev.conversations.length > 0) setTimeout(() => ws.send({ type: "agent", command: { type: "open", conversationId: ev.conversations[0].id } }), 0);
           break;
@@ -165,7 +168,7 @@ export const useStore = create<AppState>((set, get) => {
     view: views.includes(hashView) ? hashView : "live",
     theme: initialTheme,
     selectedFixtureId: null, editorPatternId: null,
-    agent: { conversations: [], current: null, busy: {} },
+    agent: { conversations: [], current: null, busy: {}, all: false },
     mic: { running: false, level: 0, bpm: null, error: null, supported: typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia },
 
     startMic: async () => {

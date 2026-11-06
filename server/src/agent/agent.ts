@@ -18,7 +18,7 @@ export class AgentService {
   private running = new Map<string, AbortController>();
   private dir = path.join(config.dataDir, "agent");
 
-  constructor(private host: AgentHost, private broadcast: (ev: AgentEvent) => void) {}
+  constructor(private host: AgentHost, private broadcast: (ev: AgentEvent, conversationId: string | null, ownerDeviceId: string | undefined) => void) {}
 
   hasCredentials(): boolean {
     return !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || fs.existsSync(path.join(process.env.HOME ?? "", ".config", "anthropic")));
@@ -30,16 +30,20 @@ export class AgentService {
   }
 
   // ---- storage ----
-  list() {
-    const out: { id: string; title: string; updatedAt: number }[] = [];
+  /** Conversations visible to a device: its own, or everything when `all` (admins). */
+  list(deviceId: string, all = false) {
+    const out: { id: string; title: string; updatedAt: number; ownerName?: string; mine: boolean }[] = [];
     for (const f of fs.readdirSync(this.dir).filter((f) => f.endsWith(".json"))) {
       try {
         const c = JSON.parse(fs.readFileSync(path.join(this.dir, f), "utf8")) as StoredConversation;
-        out.push({ id: c.id, title: c.title, updatedAt: c.updatedAt });
+        const mine = c.ownerDeviceId === deviceId;
+        if (mine || all) out.push({ id: c.id, title: c.title, updatedAt: c.updatedAt, ownerName: c.ownerName, mine });
       } catch { /* skip */ }
     }
     return out.sort((a, b) => b.updatedAt - a.updatedAt);
   }
+  /** Owner device of a conversation (undefined for conversations from before device identity). */
+  ownerOf(id: string): string | undefined { return this.load(id)?.ownerDeviceId; }
   private load(id: string): StoredConversation | null {
     const f = path.join(this.dir, `${id}.json`);
     if (!fs.existsSync(f)) return null;
@@ -51,8 +55,8 @@ export class AgentService {
   }
   delete(id: string) { fs.rmSync(path.join(this.dir, `${id}.json`), { force: true }); }
 
-  create(): StoredConversation {
-    const c: StoredConversation = { id: nanoid(10), title: "New conversation", messages: [], history: [], createdAt: Date.now(), updatedAt: Date.now() };
+  create(owner?: { deviceId: string; name: string }): StoredConversation {
+    const c: StoredConversation = { id: nanoid(10), title: "New conversation", ownerDeviceId: owner?.deviceId, ownerName: owner?.name, messages: [], history: [], createdAt: Date.now(), updatedAt: Date.now() };
     this.save(c);
     return c;
   }
@@ -67,8 +71,10 @@ export class AgentService {
   cancel(id: string) { this.running.get(id)?.abort(); }
 
   // ---- chat ----
-  async send(conversationId: string | null, text: string, context?: { patternId?: string | null; by?: string }) {
-    const conv = (conversationId ? this.load(conversationId) : null) ?? this.create();
+  async send(conversationId: string | null, text: string, context?: { patternId?: string | null; by?: string; owner?: { deviceId: string; name: string } }) {
+    const conv = (conversationId ? this.load(conversationId) : null) ?? this.create(context?.owner);
+    if (!conv.ownerDeviceId && context?.owner) { conv.ownerDeviceId = context.owner.deviceId; conv.ownerName = context.owner.name; }
+    const owner = conv.ownerDeviceId;
     if (this.running.has(conv.id)) throw new Error("The agent is still working on this conversation");
     if (!this.hasCredentials()) throw new Error("No Anthropic credentials. Set ANTHROPIC_API_KEY in the server environment (see README).");
 
@@ -83,8 +89,8 @@ export class AgentService {
     }
     conv.history.push({ role: "user", content: userText });
     this.save(conv);
-    this.broadcast({ type: "message", conversationId: conv.id, message: userMsg });
-    this.broadcast({ type: "busy", conversationId: conv.id, busy: true });
+    this.broadcast({ type: "message", conversationId: conv.id, message: userMsg }, conv.id, owner);
+    this.broadcast({ type: "busy", conversationId: conv.id, busy: true }, conv.id, owner);
 
     const abort = new AbortController();
     this.running.set(conv.id, abort);
@@ -96,7 +102,7 @@ export class AgentService {
       for (let iteration = 0; iteration < 12; iteration++) {
         const assistant: AgentChatMessage = { id: nanoid(8), role: "assistant", text: "", toolCalls: [], createdAt: Date.now(), streaming: true };
         conv.messages.push(assistant);
-        this.broadcast({ type: "message", conversationId: conv.id, message: assistant });
+        this.broadcast({ type: "message", conversationId: conv.id, message: assistant }, conv.id, owner);
 
         // Live rig/show state goes in as a mid-conversation system message that stays in the
         // history (append-only). The top-level system prompt must never change between turns:
@@ -119,19 +125,19 @@ export class AgentService {
         const toolById = new Map<number, AgentToolCall>();
         stream.on("text", (delta) => {
           assistant.text += delta;
-          this.broadcast({ type: "delta", conversationId: conv.id, messageId: assistant.id, text: delta });
+          this.broadcast({ type: "delta", conversationId: conv.id, messageId: assistant.id, text: delta }, conv.id, owner);
         });
         stream.on("streamEvent", (ev) => {
           if (ev.type === "content_block_start" && ev.content_block.type === "tool_use") {
             const call: AgentToolCall = { id: ev.content_block.id, name: ev.content_block.name, input: {}, partial: "" };
             toolById.set(ev.index, call);
             assistant.toolCalls.push(call);
-            this.broadcast({ type: "toolStart", conversationId: conv.id, messageId: assistant.id, call });
+            this.broadcast({ type: "toolStart", conversationId: conv.id, messageId: assistant.id, call }, conv.id, owner);
           } else if (ev.type === "content_block_delta" && ev.delta.type === "input_json_delta") {
             const call = toolById.get(ev.index);
             if (call) {
               call.partial = (call.partial ?? "") + ev.delta.partial_json;
-              this.broadcast({ type: "toolDelta", conversationId: conv.id, messageId: assistant.id, callId: call.id, partial: ev.delta.partial_json });
+              this.broadcast({ type: "toolDelta", conversationId: conv.id, messageId: assistant.id, callId: call.id, partial: ev.delta.partial_json }, conv.id, owner);
             }
           }
         });
@@ -170,7 +176,7 @@ export class AgentService {
           }
           call.result = result.length > 4000 ? result.slice(0, 4000) + "…" : result;
           call.isError = isError;
-          this.broadcast({ type: "toolEnd", conversationId: conv.id, messageId: assistant.id, callId: tu.id, result: call.result, isError });
+          this.broadcast({ type: "toolEnd", conversationId: conv.id, messageId: assistant.id, callId: tu.id, result: call.result, isError }, conv.id, owner);
           results.push({ type: "tool_result", tool_use_id: tu.id, content: result, is_error: isError });
         }
         conv.history.push({ role: "user", content: results });
@@ -196,9 +202,9 @@ export class AgentService {
       for (const m of conv.messages) m.streaming = false;
       this.save(conv);
       const { history: _h, ...pub } = conv;
-      this.broadcast({ type: "conversation", conversation: pub });
-      this.broadcast({ type: "busy", conversationId: conv.id, busy: false });
-      this.broadcast({ type: "conversations", conversations: this.list() });
+      this.broadcast({ type: "conversation", conversation: pub }, conv.id, owner);
+      this.broadcast({ type: "busy", conversationId: conv.id, busy: false }, conv.id, owner);
+      this.broadcast({ type: "conversations", conversations: [], all: false }, conv.id, owner); // hub re-lists per client
     }
     return conv.id;
   }

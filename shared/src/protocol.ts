@@ -126,13 +126,16 @@ export interface AgentChatMessage {
 export interface AgentConversation {
   id: string;
   title: string;
+  /** Device that started it; conversations are private to their owner (admins can see all). */
+  ownerDeviceId?: string;
+  ownerName?: string;
   messages: AgentChatMessage[];
   createdAt: number;
   updatedAt: number;
 }
 
 export type AgentCommand =
-  | { type: "list" }
+  | { type: "list"; all?: boolean }
   | { type: "open"; conversationId: string }
   | { type: "new" }
   | { type: "send"; conversationId: string | null; text: string; context?: { patternId?: string | null; by?: string } }
@@ -140,7 +143,7 @@ export type AgentCommand =
   | { type: "delete"; conversationId: string };
 
 export type AgentEvent =
-  | { type: "conversations"; conversations: { id: string; title: string; updatedAt: number }[] }
+  | { type: "conversations"; conversations: { id: string; title: string; updatedAt: number; ownerName?: string; mine: boolean }[]; all: boolean }
   | { type: "conversation"; conversation: AgentConversation }
   | { type: "delta"; conversationId: string; messageId: string; text: string }
   | { type: "toolStart"; conversationId: string; messageId: string; call: AgentToolCall }

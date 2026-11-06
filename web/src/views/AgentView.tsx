@@ -15,6 +15,7 @@ export function AgentView() {
   const send = useStore((s) => s.send);
   const status = useStore((s) => s.status);
   const settings = useStore((s) => s.settings);
+  const can = useStore((s) => s.can);
   const editorPatternId = useStore((s) => s.editorPatternId);
   const show = useStore((s) => s.show);
   const [text, setText] = useState("");
@@ -36,10 +37,16 @@ export function AgentView() {
     <div className="agent">
       <div className="convs">
         <button className="btn" onClick={() => send({ type: "agent", command: { type: "new" } })}><Plus /> New chat</button>
+        {can("admin") && (
+          <div className="seg" style={{ alignSelf: "start" }}>
+            <button className={!agent.all ? "active" : ""} onClick={() => send({ type: "agent", command: { type: "list", all: false } })}>Mine</button>
+            <button className={agent.all ? "active" : ""} onClick={() => send({ type: "agent", command: { type: "list", all: true } })}>Everyone's</button>
+          </div>
+        )}
         <div className="plist">
           {agent.conversations.map((c) => (
-            <button key={c.id} className={conv?.id === c.id ? "active" : ""} onClick={() => send({ type: "agent", command: { type: "open", conversationId: c.id } })}>
-              <span className="t">{c.title}</span>
+            <button key={c.id} className={conv?.id === c.id ? "active" : ""} onClick={() => send({ type: "agent", command: { type: "open", conversationId: c.id } })} title={c.ownerName ? `Started by ${c.ownerName}` : ""}>
+              <span className="t">{agent.all && !c.mine && c.ownerName ? <span className="faint">{c.ownerName}: </span> : null}{c.title}</span>
               <span className="btn ghost icon sm" role="button" aria-label="Delete" onClick={(e) => { e.stopPropagation(); send({ type: "agent", command: { type: "delete", conversationId: c.id } }); }}><Trash2 style={{ width: 13, height: 13 }} /></span>
             </button>
           ))}

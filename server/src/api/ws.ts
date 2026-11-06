@@ -10,7 +10,7 @@ import { DEVICE_COOKIE, newDeviceId } from "./devices.js";
 import type { AppContext } from "./context.js";
 import { validateRig } from "./validate.js";
 
-interface Client { ws: WebSocket; id: string; deviceId: string; role: Role; name: string; color: string; connectedAt: number; wantsDmx: boolean; alive: boolean; ip: string; }
+interface Client { ws: WebSocket; id: string; deviceId: string; role: Role; name: string; color: string; connectedAt: number; wantsDmx: boolean; alive: boolean; ip: string; openConv: string | null; listAll: boolean; }
 
 /** Sliding-window counter keyed by string (per device ip, or "*" for everyone). */
 class RateLimiter {
@@ -55,7 +55,7 @@ export class WsHub {
       const deviceId = parseCookies(req.headers.cookie)[DEVICE_COOKIE] || newDeviceId();
       const known = ctx.devices.touch(deviceId, { role, visits: 1 });
       const color = COLORS[hashStr(deviceId) % COLORS.length];
-      const client: Client = { ws, id, deviceId, role, name: known.name || `Guest ${this.clients.size + 1}`, color, connectedAt: Date.now(), wantsDmx: false, alive: true, ip };
+      const client: Client = { ws, id, deviceId, role, name: known.name || `Guest ${this.clients.size + 1}`, color, connectedAt: Date.now(), wantsDmx: false, alive: true, ip, openConv: null, listAll: false };
       this.clients.set(id, client);
       this.send(client, { type: "hello", clientId: id, deviceId, role, serverTime: Date.now(), name: client.name });
       this.send(client, this.snapshot(client.role));
@@ -279,8 +279,15 @@ export class WsHub {
     }
   }
 
-  /** Who receives agent events: editors and admins always, guests when guest access is on. */
-  agentAudience(): Role { return this.ctx.settingsFile.get().agent.guestAccess ? "guest" : "editor"; }
+  /** Agent events go to the conversation owner's devices and to anyone who has it open (admins may). */
+  agentEvent(ev: Parameters<AppContext["agent"]["send"]> extends never ? never : import("../../../shared/src/index.js").AgentEvent, conversationId: string | null, owner: string | undefined) {
+    for (const c of this.clients.values()) {
+      const involved = (owner && c.deviceId === owner) || (conversationId !== null && c.openConv === conversationId);
+      if (!involved) continue;
+      if (ev.type === "conversations") this.send(c, { type: "agent", event: { type: "conversations", conversations: this.ctx.agent.list(c.deviceId, c.listAll && roleAllows(c.role, "admin")), all: c.listAll } });
+      else this.send(c, { type: "agent", event: ev });
+    }
+  }
 
   private handleAgent(client: Client, cmd: ClientMessage extends infer T ? T extends { type: "agent"; command: infer C } ? C : never : never) {
     const agent = this.ctx.agent;
@@ -297,14 +304,20 @@ export class WsHub {
         if (waitAll) throw new Error(`The room has used its agent budget for this hour. Try again in ${fmtWait(waitAll)}.`);
       }
     }
+    const isAdmin = roleAllows(client.role, "admin");
+    const canTouch = (id: string) => { const o = agent.ownerOf(id); return isAdmin || (o !== undefined && o === client.deviceId); };
+    const listFor = () => ({ type: "conversations" as const, conversations: agent.list(client.deviceId, client.listAll && isAdmin), all: client.listAll && isAdmin });
+    const owner = { deviceId: client.deviceId, name: client.name };
     switch (cmd.type) {
-      case "list": sendTo({ type: "conversations", conversations: agent.list() }); return;
-      case "new": { const c = agent.create(); const { history: _h, ...pub } = c; sendTo({ type: "conversation", conversation: pub }); sendTo({ type: "conversations", conversations: agent.list() }); return c.id; }
-      case "open": { const c = agent.open(cmd.conversationId); if (!c) throw new Error("Conversation not found"); sendTo({ type: "conversation", conversation: c }); return; }
-      case "delete": agent.delete(cmd.conversationId); sendTo({ type: "conversations", conversations: agent.list() }); return;
-      case "cancel": agent.cancel(cmd.conversationId); return;
+      case "list": client.listAll = !!cmd.all; sendTo(listFor()); return;
+      case "new": { const c = agent.create(owner); client.openConv = c.id; const { history: _h, ...pub } = c; sendTo({ type: "conversation", conversation: pub }); sendTo(listFor()); return c.id; }
+      case "open": { if (!canTouch(cmd.conversationId)) throw new Error("That conversation belongs to someone else"); const c = agent.open(cmd.conversationId); if (!c) throw new Error("Conversation not found"); client.openConv = c.id; sendTo({ type: "conversation", conversation: c }); return; }
+      case "delete": if (!canTouch(cmd.conversationId)) throw new Error("That conversation belongs to someone else"); agent.delete(cmd.conversationId); sendTo(listFor()); return;
+      case "cancel": if (!canTouch(cmd.conversationId)) throw new Error("That conversation belongs to someone else"); agent.cancel(cmd.conversationId); return;
       case "send":
-        agent.send(cmd.conversationId, cmd.text, { ...cmd.context, by: client.name }).catch((e: Error) => this.send(client, { type: "error", text: e.message }));
+        if (cmd.conversationId && !canTouch(cmd.conversationId)) throw new Error("That conversation belongs to someone else");
+        if (cmd.conversationId) client.openConv = cmd.conversationId;
+        agent.send(cmd.conversationId, cmd.text, { ...cmd.context, by: client.name, owner }).then((id) => { client.openConv = id; }).catch((e: Error) => this.send(client, { type: "error", text: e.message }));
         return;
     }
   }
