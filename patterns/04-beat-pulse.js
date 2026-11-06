@@ -2,6 +2,13 @@ export default {
   name: "Beat Pulse",
   description: "Flash on every beat with an exponential decay; color steps through a palette.",
   tags: ["beat", "party"],
+  // Lasers: same palette as the washes, one color per pulse, waves opening with the decay.
+  lasers(ctx) {
+    const p = ctx.params;
+    const n = Number(p.every);
+    const idx = Math.floor(ctx.beat / n);
+    return [0, 1].map((i) => ({ mode: "manual", pattern: "fan", color: p.palette[(idx + i) % p.palette.length], spread: 0.5 }));
+  },
   params: {
     palette: { type: "palette", default: ["#ff0040", "#ff8a00", "#ffee00", "#00e676", "#00b0ff", "#d500f9"], label: "Colors (one per beat)" },
     decay: { type: "number", default: 6, min: 1, max: 20, step: 0.5, label: "Decay speed", group: "Timing" },

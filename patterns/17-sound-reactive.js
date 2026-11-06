@@ -2,6 +2,8 @@ export default {
   name: "Sound Reactive",
   description: "Follows a microphone: bass drives the washes, onsets flash the pinspots. Falls back to the beat clock when nobody streams audio.",
   tags: ["audio", "party", "beat"],
+  // Lasers: the fixtures' own sound-active mode, multicolor, so they listen with their own mics.
+  lasers: "sound-multi",
   params: {
     palette: { type: "palette", default: ["#ff2d55", "#ff9500", "#ffd60a", "#30d158", "#0a84ff", "#bf5af2"], label: "Palette" },
     gain: { type: "number", default: 1.5, min: 0.2, max: 5, step: 0.1, label: "Gain" },

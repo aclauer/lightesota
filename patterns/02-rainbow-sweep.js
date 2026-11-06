@@ -2,6 +2,13 @@ export default {
   name: "Rainbow Sweep",
   description: "A hue gradient slides across the room. Follows the BPM when synced.",
   tags: ["color", "flow"],
+  // Lasers: step through the six laser colors in hue order as the rainbow sweeps, half a cycle apart.
+  lasers(ctx) {
+    const order = ["red", "yellow", "green", "cyan", "blue", "magenta"];
+    const phase = ctx.params.beatSync ? ctx.beat * ctx.params.speed : ctx.t * ctx.params.speed;
+    const k = Math.floor(phase * 6);
+    return [0, 1].map((i) => ({ mode: "manual", pattern: "fan", color: order[((k + i * 3) % 6 + 6) % 6], spread: 0.5 }));
+  },
   params: {
     speed: { type: "number", default: 0.125, min: 0, max: 2, step: 0.005, unit: "cycles/beat", label: "Speed", group: "Timing" },
     beatSync: { type: "boolean", default: true, label: "Sync to BPM", group: "Timing" },

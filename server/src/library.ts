@@ -42,7 +42,7 @@ export class Library extends EventEmitter<LibraryEvents> {
       const t = testPattern(source);
       return {
         id, name: t.compiled.name, description: t.compiled.description, tags: t.compiled.tags,
-        usesBeat: t.compiled.usesBeat, builtin, params: t.compiled.params, createdAt, updatedAt,
+        usesBeat: t.compiled.usesBeat, usesLasers: t.compiled.usesLasers, builtin, params: t.compiled.params, createdAt, updatedAt,
         swatch: t.swatch, source,
       };
     } catch (e) {
@@ -50,7 +50,7 @@ export class Library extends EventEmitter<LibraryEvents> {
       try { name = compilePattern(source).name; } catch { /* keep id */ }
       const m = /name\s*:\s*["'`]([^"'`]+)["'`]/.exec(source);
       if (m) name = m[1];
-      return { id, name, description: "", tags: [], usesBeat: false, builtin, params: {}, createdAt, updatedAt, error: (e as Error).message, source };
+      return { id, name, description: "", tags: [], usesBeat: false, usesLasers: false, builtin, params: {}, createdAt, updatedAt, error: (e as Error).message, source };
     }
   }
 
@@ -73,7 +73,7 @@ export class Library extends EventEmitter<LibraryEvents> {
     fs.writeFileSync(file, input.source);
     const pattern: Pattern = {
       id, name: test.compiled.name, description: test.compiled.description, tags: test.compiled.tags,
-      usesBeat: test.compiled.usesBeat, builtin: false, params: test.compiled.params,
+      usesBeat: test.compiled.usesBeat, usesLasers: test.compiled.usesLasers, builtin: false, params: test.compiled.params,
       createdAt: existing && !existing.builtin ? existing.createdAt : now, updatedAt: now, swatch: test.swatch, source: input.source,
     };
     this.patterns.set(id, pattern);

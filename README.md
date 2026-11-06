@@ -109,6 +109,13 @@ the Live tab, and it only speaks the preset vocabulary the laser operator approv
 - Anything else, including every unknown value a client might send, encodes as all zeros, the
   Scorpion's dark and still state.
 
+Patterns drive the lasers too. A pattern may export a `lasers` section: either the name of a look
+(`lasers: "beat-colors"`) or a function `lasers(ctx)` that returns one entry per laser, built from the
+same vocabulary (mode, fan/wave, a color that snaps to the nearest approved one, spread 0..1 for how far
+the unit's two mirrored fans sit apart, or a sound mode). Such patterns are tagged **laser** on the
+Patterns tab, and most of the party and color built-ins have one. Applying a pattern without a lasers
+section turns the lasers off. The agent writes laser sections when asked for a look "with lasers".
+
 An admin must **arm** the lasers before any preset is emitted. The arm is in memory only: every
 server start comes up disarmed, "Release output" disarms, blackout holds the laser channels at zero
 while it is on, and the **All lasers off** button (anyone with control, so a guest can hit it) sets

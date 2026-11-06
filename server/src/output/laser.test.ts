@@ -77,3 +77,48 @@ test("every look at every time and beat stays inside the approved vocabulary", a
     }
   }
 });
+
+test("a pattern's lasers section is compiled, tagged, and forced into the vocabulary", async () => {
+  const { testPattern, compilePattern } = await import("../engine/sandbox.js");
+  const src = `export default {
+    name: "L", params: { c: { type: "color", default: "#ff8800" } },
+    lasers(ctx) { return [{ mode: "manual", pattern: "fan", color: ctx.params.c, spread: 7 }, { mode: "sound", musicColor: "cyan" }, "nonsense"]; },
+    render(ctx) { ctx.fill("#fff"); },
+  };`;
+  const t = testPattern(src);
+  assert.equal(t.compiled.usesLasers, true);
+  assert.ok(t.compiled.tags.includes("laser"));
+  const { PatternInstance } = await import("../engine/sandbox.js");
+  const inst = new PatternInstance(compilePattern(src), [], undefined, 1);
+  inst.setLaserCount(2);
+  inst.render(0.025, 120, 0);
+  const out = inst.lasers()!;
+  assert.equal(out[0].color, "yellow");          // #ff8800 snaps to the nearest approved color
+  assert.equal(out[0].pan, LASER_PAN_MAX);       // spread 7 clamps to the top of the window
+  assert.equal(out[1].mode, "music"); assert.equal(out[1].musicColor, "cyan");
+  assert.equal(out[2].mode, "manual"); assert.equal(out[2].color, "green"); // a junk entry falls back to defaults
+  assert.throws(() => compilePattern(`export default { name: "x", lasers: "no-such-look", render() {} };`), /unknown look/);
+  const plain = testPattern(`export default { name: "p", render(ctx) { ctx.fill("#fff"); } };`);
+  assert.equal(plain.compiled.usesLasers, false);
+  assert.ok(!plain.compiled.tags.includes("laser"));
+});
+
+test("every built-in pattern with a lasers section compiles and its lasers() stays approved over time", async () => {
+  const fs = await import("node:fs"); const path = await import("node:path");
+  const { compilePattern, PatternInstance, syntheticFixtures } = await import("../engine/sandbox.js");
+  const dir = path.resolve(import.meta.dirname, "../../../patterns");
+  let withLasers = 0;
+  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".js"))) {
+    const compiled = compilePattern(fs.readFileSync(path.join(dir, file), "utf8"));
+    if (!compiled.usesLasers) continue;
+    withLasers++;
+    if (!compiled.laserFn) continue;
+    const inst = new PatternInstance(compiled, syntheticFixtures(), undefined, 1); inst.setLaserCount(2);
+    for (let i = 0; i < 60; i++) {
+      inst.render(0.1, 120, i * 0.3);
+      for (const s of inst.lasers()!) { assert.deepEqual(s, sanitizeLaserState(s), `${file}: unapproved laser state`); const b = laserBytes(s, true, false); if (s.mode === "manual") assert.equal(b[6], LASER_TILT); }
+      assert.equal(inst.laserError, null, `${file}: ${inst.laserError}`);
+    }
+  }
+  assert.ok(withLasers >= 8, `expected several built-ins with lasers, found ${withLasers}`);
+});

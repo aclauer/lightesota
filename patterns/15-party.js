@@ -2,6 +2,13 @@ export default {
   name: "Party Mode",
   description: "Palette hits on every beat, pinspots alternate on the off-beats, a strobe burst on bar 4.",
   tags: ["party", "beat"],
+  // Lasers: fans snapping to the palette color of the beat, spread flipping tight/wide every bar.
+  lasers(ctx) {
+    const p = ctx.params;
+    const beatIdx = Math.floor(ctx.beat);
+    const wide = Math.floor(ctx.bar) % 2 === 0;
+    return [0, 1].map((i) => ({ mode: "manual", pattern: "fan", color: p.palette[(beatIdx + i) % p.palette.length], spread: wide ? 1 : 0.2 }));
+  },
   params: {
     palette: { type: "palette", default: PALETTES.neon, label: "Palette" },
     decay: { type: "number", default: 5, min: 1, max: 20, step: 0.5, label: "Hit decay", group: "Timing" },

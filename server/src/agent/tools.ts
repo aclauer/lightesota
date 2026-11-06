@@ -200,7 +200,7 @@ export function runTool(host: AgentHost, name: string, rawInput: unknown, caller
     case "get_lasers": {
       const rig = host.getRig(); const L = host.show.state.lasers;
       return JSON.stringify({
-        armed: L.armed, armedBy: L.armedBy, look: L.look, blackout: host.show.state.blackout,
+        armed: L.armed, armedBy: L.armedBy, look: L.look, lookNote: L.look === "pattern" ? "the live pattern's lasers() is driving them" : undefined, blackout: host.show.state.blackout,
         callerMayControl: roleAllows(caller.role, "admin"),
         lasers: laserFixtures(rig).map((f) => ({ id: f.id, name: f.name, on: laserIsOn(L.fixtures[f.id], L.armed, host.show.state.blackout), ...(L.fixtures[f.id] ?? {}) })),
         looks: LASER_LOOKS.map((l) => ({ id: l.id, name: l.name, description: l.description, animated: l.animated })),

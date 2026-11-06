@@ -67,7 +67,7 @@ export function PatternsView() {
 function PatternCard({ p, active, onActivate, onEdit, disabled }: { p: PatternMeta; active: boolean; onActivate: () => void; onEdit?: () => void; disabled: boolean }) {
   return (
     <div className={`pcard ${active ? "active" : ""}`} onClick={() => !disabled && !p.error && onActivate()} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && !disabled && onActivate()} aria-pressed={active}>
-      <div className="name"><span>{p.name}</span>{p.usesBeat && <span className="pill accent" title="Follows the BPM">BPM</span>}</div>
+      <div className="name"><span>{p.name}</span><span className="row" style={{ gap: 4 }}>{p.usesLasers && <span className="pill danger" title="Uses the lasers (when armed)">LASER</span>}{p.usesBeat && <span className="pill accent" title="Follows the BPM">BPM</span>}</span></div>
       <div className="swatches">{(p.swatch?.length ? p.swatch : ["#222"]).map((c, i) => <i key={i} style={{ background: c }} />)}</div>
       <div className="desc">{p.error ? <span style={{ color: "var(--danger)" }}>Error: {p.error}</span> : p.description}</div>
       <div className="row" style={{ justifyContent: "space-between" }}>

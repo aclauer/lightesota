@@ -2,6 +2,11 @@ export default {
   name: "Chase",
   description: "One fixture lights at a time in room order, with a fading trail.",
   tags: ["beat", "movement"],
+  // Lasers: the chase continues onto the lasers, one lit per step in the pattern color.
+  lasers(ctx) {
+    const step = Math.floor(ctx.beat * ctx.params.perBeat);
+    return [0, 1].map((i) => (step % 2 === i ? { mode: "manual", pattern: "fan", color: ctx.params.color, spread: 0.4 } : null));
+  },
   params: {
     color: { type: "color", default: "#00e5ff", label: "Color" },
     perBeat: { type: "number", default: 1, min: 0.25, max: 4, step: 0.25, label: "Steps per beat", group: "Timing" },

@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { nanoid } from "nanoid";
 import {
-  defaultParams, sanitizeParams, defaultLasersState, defaultLaserState, sanitizeLaserState, laserFixtures, findLaserLook,
+  defaultParams, sanitizeParams, defaultLasersState, defaultLaserState, sanitizeLaserState, laserFixtures, findLaserLook, LASER_LOOK_PATTERN,
   type AudioFrame, type LaserState, type FixtureOverride, type ParamValues, type Rig, type Scene, type Settings, type ShowState, type Playlist,
 } from "../../shared/src/index.js";
 import { Engine } from "./engine/engine.js";
@@ -46,8 +46,24 @@ export class ShowController extends EventEmitter<ShowEvents> {
     };
     setInterval(() => this.audioTick(), 500).unref();
     setInterval(() => this.laserLookTick(), 100).unref();
-    this.engine.on("patternLoaded", ({ id, params }) => {
-      if (id === this.state.patternId) { this.state.params = params; this.state.outgoingPatternId = null; this.changed(); }
+    this.engine.on("patternLoaded", ({ id, params, usesLasers, laserLook }) => {
+      if (id === this.state.patternId) {
+        this.state.params = params; this.state.outgoingPatternId = null;
+        this.patternLasers(usesLasers, laserLook);
+        this.changed();
+      }
+    });
+    this.engine.on("lasers", (states) => {
+      const L = this.state.lasers;
+      if (L.look !== LASER_LOOK_PATTERN) return;
+      const lasers = laserFixtures(this.getRig());
+      let changed = false;
+      lasers.forEach((f, i) => {
+        const next = states[i] ?? { ...defaultLaserState(), mode: "off" as const };
+        const prev = L.fixtures[f.id];
+        if (!prev || prev.mode !== next.mode || prev.pattern !== next.pattern || prev.color !== next.color || prev.pan !== next.pan || prev.musicColor !== next.musicColor) { L.fixtures[f.id] = next; changed = true; }
+      });
+      if (changed) this.changed();
     });
     this.engine.on("patternError", ({ error }) => this.emit("toast", { level: "error", text: `Pattern failed to load: ${error}` }));
   }
@@ -223,9 +239,25 @@ export class ShowController extends EventEmitter<ShowEvents> {
     this.state.lasers.look = null; // a hand edit takes over from any look
     this.changed();
   }
+  /**
+   * The live pattern decides the lasers: a look it names, its lasers() function, or nothing, in which
+   * case every laser goes to Off (the arm stays with the operator).
+   */
+  private patternLasers(usesLasers: boolean, laserLook: string | null) {
+    const L = this.state.lasers;
+    if (laserLook) { L.look = laserLook; this.applyLook(true); return; }
+    if (usesLasers) { L.look = LASER_LOOK_PATTERN; return; }
+    L.look = null;
+    for (const id of Object.keys(L.fixtures)) if (L.fixtures[id].mode !== "off") L.fixtures[id] = { ...L.fixtures[id], mode: "off" };
+  }
   /** Apply a look: static ones are written once, animated ones are re-evaluated by laserLookTick. */
   setLaserLook(lookId: string | null) {
     if (lookId === null) { this.state.lasers.look = null; this.changed(); return; }
+    if (lookId === LASER_LOOK_PATTERN) {
+      const p = this.state.patternId ? this.library.getPattern(this.state.patternId) : undefined;
+      if (!p?.usesLasers) throw new Error("The live pattern has no lasers section");
+      this.state.lasers.look = LASER_LOOK_PATTERN; this.changed(); return;
+    }
     const look = findLaserLook(lookId);
     if (!look) throw new Error(`Unknown laser look ${lookId}`);
     this.state.lasers.look = look.id;

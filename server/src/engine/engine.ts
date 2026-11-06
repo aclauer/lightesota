@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { Worker } from "node:worker_threads";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { engineFixtures, findProfile, type Fixture, type FixtureOverride, type FrameColor, type ParamValues, type Rig } from "../../../shared/src/index.js";
+import { engineFixtures, findProfile, laserFixtures, type LaserState, type Fixture, type FixtureOverride, type FrameColor, type ParamValues, type Rig } from "../../../shared/src/index.js";
 import { OUT_STRIDE, SILENT_AUDIO, type AudioState, type SandboxFixture } from "./sandbox.js";
 import type { FromWorker, ToWorker } from "./worker.js";
 
@@ -26,7 +26,9 @@ interface EngineEvents {
   frame: [EngineFrame];
   status: [EngineStatus];
   log: [string];
-  patternLoaded: [{ id: string; params: ParamValues }];
+  patternLoaded: [{ id: string; params: ParamValues; usesLasers: boolean; laserLook: string | null }];
+  /** The live pattern's lasers() output (already sanitized), one entry per laser. */
+  lasers: [LaserState[]];
   patternError: [{ id: string; error: string }];
 }
 
@@ -101,7 +103,8 @@ export class Engine extends EventEmitter<EngineEvents> {
   setRig(rig: Rig) {
     this.fixtures = engineFixtures(rig);
     this.sandboxFixtures = toSandboxFixtures(this.fixtures, rig);
-    this.post({ type: "fixtures", fixtures: this.sandboxFixtures });
+    this.laserCount = laserFixtures(rig).length;
+    this.post({ type: "fixtures", fixtures: this.sandboxFixtures, lasers: this.laserCount });
   }
 
   get beat(): number { return this.beatAt(Date.now()); }
@@ -159,7 +162,7 @@ export class Engine extends EventEmitter<EngineEvents> {
     w.on("error", (e) => { this.emit("log", `worker error: ${e.message}`); this.restartWorker(); });
     w.on("exit", (code) => { if (this.worker === w) { this.emit("log", `worker exited (${code})`); this.worker = null; } });
     this.worker = w;
-    w.postMessage({ type: "fixtures", fixtures: this.sandboxFixtures } satisfies ToWorker);
+    w.postMessage({ type: "fixtures", fixtures: this.sandboxFixtures, lasers: this.laserCount } satisfies ToWorker);
   }
 
   private restartWorker() {
@@ -175,6 +178,7 @@ export class Engine extends EventEmitter<EngineEvents> {
     this.emitStatus();
   }
   private lastLoaded: { id: string; source: string; params?: ParamValues } | null = null;
+  private laserCount = 0;
   private lastWorkerStart = 0;
 
   private post(msg: ToWorker) { this.worker?.postMessage(msg); }
@@ -187,7 +191,7 @@ export class Engine extends EventEmitter<EngineEvents> {
         if (!pending || pending.id !== m.id) {
           // A restart reload or stale load: no fade.
           this.currentId = m.id;
-          this.emit("patternLoaded", { id: m.id, params: m.params });
+          this.emit("patternLoaded", { id: m.id, params: m.params, usesLasers: m.usesLasers, laserLook: m.laserLook });
           return;
         }
         // The worker has already replaced slot A with the new instance; the previous
@@ -196,7 +200,7 @@ export class Engine extends EventEmitter<EngineEvents> {
         this.lastLoaded = { id: m.id, source: pending.source, params: m.params };
         this.pendingLoad = null;
         this.patternError = undefined;
-        this.emit("patternLoaded", { id: m.id, params: m.params });
+        this.emit("patternLoaded", { id: m.id, params: m.params, usesLasers: m.usesLasers, laserLook: m.laserLook });
         this.emitStatus();
         break;
       }
@@ -214,6 +218,7 @@ export class Engine extends EventEmitter<EngineEvents> {
         if (err !== this.patternError) { this.patternError = err; this.emitStatus(); }
         this.lastRaw = m.buf;
         this.publishFrame(m.buf);
+        if (m.lasers) this.emit("lasers", m.lasers);
         break;
       }
     }

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, Power } from "lucide-react";
 import {
   LASER_COLORS, LASER_COLOR_CSS, LASER_MUSIC_COLORS, LASER_PAN_CENTER, LASER_PAN_MAX, LASER_PAN_MIN, LASER_PATTERNS, LASER_PATTERN_LABEL,
-  LASER_LOOKS, defaultLaserState, laserFixtures, laserIsOn, type LaserState,
+  LASER_LOOKS, LASER_LOOK_PATTERN, defaultLaserState, laserFixtures, laserIsOn, type LaserState,
 } from "@lightesota/shared";
 import { useStore } from "../state/store";
 import { timeAgo } from "../lib/format";
@@ -15,9 +15,11 @@ import { timeAgo } from "../lib/format";
 export function LasersCard() {
   const rig = useStore((s) => s.rig)!;
   const show = useStore((s) => s.show)!;
+  const patterns = useStore((s) => s.patterns);
   const send = useStore((s) => s.send);
   const can = useStore((s) => s.can);
   const [, tick] = useState(0);
+  const livePattern = patterns.find((p) => p.id === show.patternId);
   useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
   const lasers = laserFixtures(rig);
   if (lasers.length === 0) return null;
@@ -46,7 +48,11 @@ export function LasersCard() {
         <div className="chips">
           {LASER_LOOKS.map((l) => <button key={l.id} className={`btn sm ${L.look === l.id ? "active" : ""}`} disabled={!admin} title={l.description} onClick={() => send({ type: "setLaserLook", lookId: L.look === l.id ? null : l.id })}>{l.name}{l.animated ? " ·" : ""}</button>)}
         </div>
-        {L.look && <div className="hint" style={{ marginTop: 6 }}>{LASER_LOOKS.find((l) => l.id === L.look)?.description} Adjusting a laser by hand stops the look.</div>}
+        {L.look === LASER_LOOK_PATTERN
+          ? <div className="hint" style={{ marginTop: 6 }}>Following the live pattern{livePattern ? ` "${livePattern.name}"` : ""}. Adjusting a laser by hand takes over.</div>
+          : L.look ? <div className="hint" style={{ marginTop: 6 }}>{LASER_LOOKS.find((l) => l.id === L.look)?.description} Adjusting a laser by hand stops the look.</div>
+          : livePattern?.usesLasers && admin ? <div className="row" style={{ marginTop: 6 }}><span className="hint">"{livePattern.name}" has a lasers section.</span><button className="btn sm ghost" onClick={() => send({ type: "setLaserLook", lookId: LASER_LOOK_PATTERN })}>Follow the pattern</button></div>
+          : null}
       </div>
       <div className="stack">
         {lasers.map((f) => <LaserRow key={f.id} id={f.id} name={f.name} state={L.fixtures[f.id] ?? defaultLaserState()} armed={L.armed} blackout={show.blackout} editable={admin} onChange={(patch) => send({ type: "setLaser", fixtureId: f.id, state: patch })} />)}

@@ -5,6 +5,7 @@ import {
   type ParamSchema, type ParamValues, type RGB,
 } from "../../../shared/src/index.js";
 import { noise, noise2, noise3 } from "./noise.js";
+import { findLaserLook, laserStateFromPattern, nearestLaserColor, type LaserState } from "../../../shared/src/index.js";
 
 /** Fixture description handed to patterns. */
 export interface SandboxFixture {
@@ -24,10 +25,16 @@ export interface CompiledPattern {
   tags: string[];
   params: ParamSchema;
   usesBeat: boolean;
+  /** Set when the module exports `lasers` (a look id or a function). */
+  usesLasers: boolean;
+  laserLook?: string;
+  laserFn?: (ctx: RenderCtx) => unknown;
   init?: (ctx: RenderCtx) => void;
   render: (ctx: RenderCtx) => void;
   /** Run a pattern function inside the vm with a hard timeout (protects against infinite loops). */
   invoke: (fn: (ctx: RenderCtx) => void, ctx: RenderCtx, timeoutMs: number) => void;
+  /** Same, returning the function's result (used for lasers()). */
+  invokeValue: (fn: (ctx: RenderCtx) => unknown, ctx: RenderCtx, timeoutMs: number) => unknown;
 }
 
 export interface AudioState { active: boolean; level: number; bass: number; mid: number; high: number; onset: boolean; bpm: number | null; }
@@ -40,6 +47,8 @@ export interface RenderCtx {
   params: ParamValues; state: Record<string, unknown>;
   n: number; fixtures: SandboxFixture[];
   washes: SandboxFixture[]; spots: SandboxFixture[]; hue: SandboxFixture[];
+  /** Number of enabled lasers (not in fixtures). */
+  lasers: number;
   random: () => number;
   set: (f: SandboxFixture | number, color: RGB | string | number[], extras?: Extras) => void;
   fill: (color: RGB | string | number[], extras?: Extras) => void;
@@ -74,7 +83,7 @@ const pulse = (p: number, width = 0.1) => { p = fract(p); return p < width ? 1 -
 
 function makeGlobals(log: (...a: unknown[]) => void) {
   return {
-    hsv, hsl, hex, mix, scale, paletteAt, PALETTES: Object.freeze({ ...PALETTES }),
+    hsv, hsl, hex, mix, scale, paletteAt, PALETTES: Object.freeze({ ...PALETTES }), laserColor: nearestLaserColor,
     lerp, clamp, clamp01, smoothstep, fract, wrap, luminance,
     noise, noise2, noise3, tri, saw, square, pulse, ease: Object.freeze({ ...ease }),
     Math, Array, Object, JSON, Number, String, Boolean, Map, Set, isFinite, isNaN, parseInt, parseFloat,
@@ -116,7 +125,15 @@ export function compilePattern(source: string, opts: CompileOptions = {}): Compi
   if (typeof def.render !== "function") throw new Error("Pattern must define render(ctx)");
   const params = validateSchema(def.params);
   const srcForBeat = source;
+  let laserLook: string | undefined, laserFn: ((ctx: RenderCtx) => unknown) | undefined;
+  if (typeof def.lasers === "string") {
+    if (!findLaserLook(def.lasers)) throw new Error(`lasers: unknown look "${def.lasers}"`);
+    laserLook = def.lasers;
+  } else if (typeof def.lasers === "function") laserFn = def.lasers as (ctx: RenderCtx) => unknown;
+  else if (def.lasers !== undefined && def.lasers !== null) throw new Error("lasers must be a look name or a function");
+  const usesLasers = !!(laserLook || laserFn);
   const invokeScript = new vm.Script("__invoke_fn(__invoke_arg)", { filename: "invoke.js" });
+  const invokeValueScript = new vm.Script("__invoke_out = __invoke_fn(__invoke_arg)", { filename: "invoke.js" });
   const ctxAny = context as Record<string, unknown>;
   const invoke = (fn: (ctx: RenderCtx) => void, ctx: RenderCtx, timeoutMs: number) => {
     ctxAny.__invoke_fn = fn;
@@ -128,13 +145,28 @@ export function compilePattern(source: string, opts: CompileOptions = {}): Compi
       ctxAny.__invoke_arg = undefined;
     }
   };
+  const invokeValue = (fn: (ctx: RenderCtx) => unknown, ctx: RenderCtx, timeoutMs: number) => {
+    ctxAny.__invoke_fn = fn;
+    ctxAny.__invoke_arg = ctx;
+    ctxAny.__invoke_out = undefined;
+    try {
+      invokeValueScript.runInContext(context, { timeout: timeoutMs });
+      // Copy out of the vm realm as plain data.
+      return JSON.parse(JSON.stringify(ctxAny.__invoke_out ?? null));
+    } finally {
+      ctxAny.__invoke_fn = undefined;
+      ctxAny.__invoke_arg = undefined;
+      ctxAny.__invoke_out = undefined;
+    }
+  };
   return {
-    invoke,
+    invoke, invokeValue,
     name: typeof def.name === "string" && def.name.trim() ? def.name.trim().slice(0, 60) : "Untitled",
     description: typeof def.description === "string" ? def.description.slice(0, 400) : "",
-    tags: Array.isArray(def.tags) ? def.tags.filter((t) => typeof t === "string").map((t) => String(t).toLowerCase().slice(0, 24)).slice(0, 10) : [],
+    tags: [...new Set([...(Array.isArray(def.tags) ? def.tags.filter((t) => typeof t === "string").map((t) => String(t).toLowerCase().slice(0, 24)).slice(0, 10) : []), ...(usesLasers ? ["laser"] : [])])],
     params,
     usesBeat: /\b(beat|beatPhase|bar|barPhase|onBeat|bpm)\b/.test(srcForBeat),
+    usesLasers, laserLook, laserFn,
     init: typeof def.init === "function" ? (def.init as (ctx: RenderCtx) => void) : undefined,
     render: def.render as (ctx: RenderCtx) => void,
   };
@@ -180,7 +212,7 @@ export class PatternInstance {
       t: 0, dt: 0, frame: 0, bpm: 120, beat: 0, beatPhase: 0, bar: 0, barPhase: 0, onBeat: false,
       audio: { ...SILENT_AUDIO },
       params: this.params, state: {},
-      n: fixtures.length, fixtures,
+      n: fixtures.length, fixtures, lasers: 0,
       washes: fixtures.filter((f) => f.kind === "wash"),
       spots: fixtures.filter((f) => f.kind === "spot"),
       hue: fixtures.filter((f) => f.kind === "hue"),
@@ -211,6 +243,24 @@ export class PatternInstance {
   setParams(p: ParamValues) {
     this.params = sanitizeParams(this.compiled.params, p);
     this.ctx.params = this.params;
+  }
+  setLaserCount(n: number) { this.ctx.lasers = n; }
+
+  laserError: string | null = null;
+  /** Evaluate the pattern's lasers() for the current ctx. Every entry is forced into the approved vocabulary. */
+  lasers(): LaserState[] | null {
+    const fn = this.compiled.laserFn;
+    if (!fn || this.disabled) return null;
+    let raw: unknown;
+    try {
+      raw = this.compiled.invokeValue(fn, this.ctx, 50);
+      this.laserError = null;
+    } catch (e) {
+      this.laserError = `lasers(): ${(e as Error).message}`;
+      return [];
+    }
+    const list = Array.isArray(raw) ? raw : raw === null || raw === undefined ? [] : [raw];
+    return list.slice(0, 8).map((x) => laserStateFromPattern(x));
   }
 
   setFixtures(fixtures: SandboxFixture[]) {
@@ -261,11 +311,13 @@ export function testPattern(source: string, fixtures?: SandboxFixture[]) {
   const fx = fixtures ?? syntheticFixtures();
   const inst = new PatternInstance(compiled, fx, defaultParams(compiled.params), 1, () => {});
   inst.timeoutMs = 250;
+  inst.setLaserCount(2);
   if (inst.error) throw new Error(inst.error);
   const t0 = performance.now();
   for (let i = 0; i < 30; i++) {
     inst.render(1 / 40, 120, i * 0.05 * 2);
     if (inst.error) throw new Error(inst.error);
+    if (compiled.laserFn && i % 10 === 0) { inst.lasers(); if (inst.laserError) throw new Error(inst.laserError); }
   }
   const perFrameMs = (performance.now() - t0) / 30;
   // Swatch: colors of up to 5 fixtures on the final frame.

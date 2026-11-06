@@ -182,3 +182,44 @@ export const LASER_LOOKS: LaserLook[] = [
 export function findLaserLook(id: string | null | undefined): LaserLook | undefined {
   return id ? LASER_LOOKS.find((l) => l.id === id) : undefined;
 }
+
+/** Sentinel for LasersState.look: the live pattern's `lasers` export is driving the lasers. */
+export const LASER_LOOK_PATTERN = "pattern";
+
+/**
+ * Nearest approved laser color to an arbitrary "#rrggbb" (or [r,g,b] 0..1). Lets a pattern reuse its
+ * palette for the lasers without ever producing a color code outside the table.
+ */
+export function nearestLaserColor(color: string | number[]): LaserColor {
+  let r = 0, g = 0, b = 0;
+  if (typeof color === "string") {
+    const n = parseInt(color.replace("#", "").slice(0, 6).padEnd(6, "0"), 16);
+    if (Number.isFinite(n)) { r = ((n >> 16) & 255) / 255; g = ((n >> 8) & 255) / 255; b = (n & 255) / 255; }
+  } else if (Array.isArray(color)) { r = Number(color[0]) || 0; g = Number(color[1]) || 0; b = Number(color[2]) || 0; }
+  const m = Math.max(r, g, b) || 1; r /= m; g /= m; b /= m; // compare hue, not brightness
+  const refs: Record<LaserColor, [number, number, number]> = { red: [1, 0, 0], green: [0, 1, 0], blue: [0, 0, 1], yellow: [1, 1, 0], magenta: [1, 0, 1], cyan: [0, 1, 1] };
+  let best: LaserColor = "green", bd = Infinity;
+  for (const c of LASER_COLORS) { const [rr, gg, bb] = refs[c]; const d = (r - rr) ** 2 + (g - gg) ** 2 + (b - bb) ** 2; if (d < bd) { bd = d; best = c; } }
+  return best;
+}
+
+/**
+ * Turn whatever a pattern's lasers() returned for one laser into an approved LaserState.
+ * Accepts the friendlier `spread` 0..1 (mapped onto the pan window) and `color` as a palette hex, which
+ * snaps to the nearest approved color. Unknown or missing fields fall back to defaults; junk is "off".
+ */
+export function laserStateFromPattern(input: unknown): LaserState {
+  if (input === null || input === undefined || input === false || input === "off") return { ...defaultLaserState(), mode: "off" };
+  if (typeof input === "string") {
+    // A bare approved color name means "manual fan in that color".
+    return sanitizeLaserState({ mode: "manual", color: input });
+  }
+  const o = (typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const patch: Record<string, unknown> = { ...o };
+  if (typeof o.color === "string" && !(LASER_COLORS as readonly string[]).includes(o.color)) patch.color = nearestLaserColor(o.color);
+  else if (Array.isArray(o.color)) patch.color = nearestLaserColor(o.color as number[]);
+  if (typeof o.spread === "number" && Number.isFinite(o.spread)) patch.pan = LASER_PAN_MIN + Math.max(0, Math.min(1, o.spread)) * (LASER_PAN_MAX - LASER_PAN_MIN);
+  if (patch.mode === undefined) patch.mode = patch.musicColor !== undefined && patch.pattern === undefined ? "music" : "manual";
+  if (patch.mode === "sound") patch.mode = "music";
+  return sanitizeLaserState(patch);
+}

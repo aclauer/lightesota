@@ -135,6 +135,8 @@ export interface PatternMeta {
   tags: string[];
   /** Does the pattern read ctx.beat? Shown as a BPM badge in the UI. */
   usesBeat: boolean;
+  /** Does the pattern export a `lasers` section (a look name or a function)? Tagged "laser" in the UI. */
+  usesLasers: boolean;
   builtin: boolean;
   params: ParamSchema;
   createdAt: number;

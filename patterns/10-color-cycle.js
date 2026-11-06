@@ -2,6 +2,12 @@ export default {
   name: "Color Cycle",
   description: "All fixtures step or glide through a palette together, once per N beats.",
   tags: ["color", "beat"],
+  // Lasers: the nearest approved color to the palette entry the washes are on, as a wave.
+  lasers(ctx) {
+    const p = ctx.params;
+    const idx = Math.floor(ctx.beat / p.beatsPerColor);
+    return [0, 1].map((i) => ({ mode: "manual", pattern: "wave", color: p.palette[(idx + i * Math.round(p.offset * 2)) % p.palette.length], spread: 0.5 }));
+  },
   params: {
     palette: { type: "palette", default: PALETTES.candy, label: "Palette" },
     beatsPerColor: { type: "number", default: 2, min: 0.25, max: 16, step: 0.25, label: "Beats per color", group: "Timing" },

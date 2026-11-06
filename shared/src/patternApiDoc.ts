@@ -60,6 +60,7 @@ ctx fields, read-only unless noted:
   ctx.get(fixtureOrIndex)   read what has been set so far this frame ({ r, g, b, w, a, uv, dim, strobe }).
   ctx.byTag(tag)            fixtures with a tag, e.g. ctx.byTag("wash").
   ctx.washes / ctx.spots / ctx.hue   shortcuts for kind === "wash" / "spot" / "hue".
+  ctx.lasers     number of enabled lasers in the rig (they are NOT in ctx.fixtures; see "Lasers" below).
 
 Helpers available as globals:
   hsv(h, s, v), hsl(h, s, l), hex("#ff0000"), mix(a, b, t), scale(c, k), paletteAt(colorsArray, t),
@@ -73,4 +74,29 @@ Helpers available as globals:
 Guidelines: keep render cheap (a few microseconds per fixture). Prefer ctx.beat for anything rhythmic so the
 pattern follows the BPM. Decay effects should use ctx.dt so they are frame-rate independent. Intensity-only
 fixtures (pinspots) only show brightness, so give them something meaningful.
+
+Lasers (optional). The room has dual-mirror lasers that only accept an operator-approved vocabulary, so a
+pattern cannot paint them like a wash. Instead it may export a \`lasers\` section, and the pattern is then
+tagged "laser"; switching to a pattern without one turns the lasers off. Lasers only emit while an admin
+has armed them, so a laser pattern is always safe to write and apply.
+
+  Form 1, a named look:      lasers: "beat-colors"      (ids: twin-green, red-green, tight, wide, waves,
+                                                          breathe, scissors, beat-colors, beat-waves,
+                                                          sound-multi, sound-cold, sound-warm)
+  Form 2, a function, called about 10 times per second with the same ctx as render, returning one entry
+  per laser (index 0 = Laser 1):
+    lasers(ctx) {
+      const col = ctx.params.palette[Math.floor(ctx.beat) % ctx.params.palette.length];
+      return [
+        { mode: "manual", pattern: "fan", color: col, spread: 0.5 },          // laser 1
+        { mode: "manual", pattern: "wave", color: "cyan", spread: ctx.beatPhase }, // laser 2
+      ];
+    }
+  Entry fields: mode "off" | "manual" | "music"; pattern "fan" (flat line) | "wave" (zigzag);
+  color: one of red, green, blue, yellow, magenta, cyan, or any "#rrggbb" which snaps to the nearest of
+  those; spread 0..1: how far the laser's two mirrored fans sit apart (they move in or out together, there
+  is no aiming); musicColor for mode "music": multicolor or one of the six colors, the laser then follows
+  its own microphone. null or "off" for an entry turns that laser off. There is no brightness, tilt or
+  strobe; do not ask for them. Prefer snapping colors on the beat over rapid changes, and keep spread
+  movement slow unless it is beat-locked.
 `;

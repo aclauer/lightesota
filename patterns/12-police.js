@@ -2,6 +2,12 @@ export default {
   name: "Red / Blue",
   description: "Two colors alternate between the left and right halves of the room.",
   tags: ["beat", "intense"],
+  // Lasers: color A on one laser, color B on the other, swapping with the washes.
+  lasers(ctx) {
+    const p = ctx.params;
+    const swap = Math.floor(ctx.beat * p.perBeat) % 2 === 0;
+    return [{ mode: "manual", pattern: "fan", color: swap ? p.colorA : p.colorB, spread: 0.7 }, { mode: "manual", pattern: "fan", color: swap ? p.colorB : p.colorA, spread: 0.7 }];
+  },
   params: {
     colorA: { type: "color", default: "#ff1a1a", label: "Color A" },
     colorB: { type: "color", default: "#1a4dff", label: "Color B" },
