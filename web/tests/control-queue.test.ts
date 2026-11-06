@@ -66,3 +66,22 @@ test("failed or disconnected requests discard the queue and explicit stale inten
     assert.equal(h.sent.length, 1, "an async Save & apply must retain the generation of the original click");
   }
 });
+
+test("haze levels serialize and coalesce, while Start and disarm retain the generation barrier", async () => {
+  const { isQueuedControl, isImmediateStop } = await import("../src/lib/control-queue.js");
+  assert.equal(isQueuedControl({type:"setHaze",armed:true}),true);
+  assert.equal(isQueuedControl({type:"setHaze",runSec:30}),true);
+  assert.equal(isImmediateStop({type:"hazeOff"}),true);
+  assert.equal(isImmediateStop({type:"setHaze",armed:false}),true);
+  const h=harness();
+  const first=h.queue.enqueue({type:"setHaze",fan:0.2});
+  const middle=h.queue.enqueue({type:"setHaze",fan:0.3});
+  const last=h.queue.enqueue({type:"setHaze",fan:0.4});
+  const start=h.queue.enqueue({type:"setHaze",runSec:30});
+  const startRejected=assert.rejects(start,/disarm/);
+  h.setGeneration(11);h.sent[0].resolve({generation:11});await first;
+  assert.deepEqual(h.sent[1].msg,{type:"setHaze",fan:0.4,generation:11});
+  const rejects=[assert.rejects(middle,/disarm/),assert.rejects(last,/disarm/)];
+  h.queue.cancel('haze disarm');h.setGeneration(12);h.sent[1].resolve({generation:11});
+  await Promise.all([...rejects,startRejected]);await settle();assert.equal(h.sent.length,2);
+});

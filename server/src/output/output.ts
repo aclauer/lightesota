@@ -4,7 +4,7 @@ import { OUT_STRIDE } from "../engine/sandbox.js";
 import { ArtNetSender } from "./artnet.js";
 import { planUniverse, renderUniverse, type DmxPlan } from "./dmx.js";
 import { HueBridge } from "./hue.js";
-import { OUTPUT_VETO, PREVIEW, OUTPUT_COMMISSIONED } from "./policy.js";
+import { OUTPUT_VETO, PREVIEW, OUTPUT_COMMISSIONED, HAZE_VETO, HAZE_DISABLED_REASON } from "./policy.js";
 
 /** Converts engine frames to DMX/Hue and keeps the status block the UI shows. */
 export class OutputManager {
@@ -115,7 +115,7 @@ export class OutputManager {
       const p = findProfile(f.profileId, this.rig.customProfiles);
       let bytes: number[];
       if (isLaserProfile(p) && p?.id === "chauvet-scorpion-dual-rgb-ils-10ch" && [31, 41].includes(f.address)) bytes = laserBytes(lasers.fixtures[f.id], lasers.armed, blackout);
-      else if (isHazeProfile(p) && p?.id === "chauvet-hurricane-haze-4d-2ch" && f.address === 51) bytes = hazeBytes(haze, blackout);
+      else if (!HAZE_VETO && isHazeProfile(p) && p?.id === "chauvet-hurricane-haze-4d-2ch" && f.address === 51) bytes = hazeBytes(haze, blackout);
       else continue;
       for (let c = 0; c < bytes.length; c++) {
         const ch = f.address - 1 + c;
@@ -149,7 +149,7 @@ export class OutputManager {
       hue: { connected: this.hue?.connected ?? false, lights: this.hue?.lightCount ?? 0, lastError: this.hue?.lastError },
       engine: { fps: this.engineStatus.fps, patternError: this.engineStatus.patternError, restarts: this.engineStatus.restarts },
       hasApiKey,
-      control: { preview: PREVIEW, commissioned: OUTPUT_COMMISSIONED && !PREVIEW, physicalState: "unverified", authority: "lightesota" },
+      control: { preview: PREVIEW, commissioned: OUTPUT_COMMISSIONED && !PREVIEW, hazeCommissioned: !HAZE_VETO, hazeDisabledReason: HAZE_DISABLED_REASON, physicalState: "unverified", authority: "lightesota" },
     };
   }
 }

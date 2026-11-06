@@ -46,7 +46,6 @@ module("homeassistant.helpers.update_coordinator", CoordinatorEntity=Coordinator
 module("homeassistant.exceptions", HomeAssistantError=HomeAssistantError)
 module("homeassistant.components.light", ATTR_BRIGHTNESS="brightness", ATTR_EFFECT="effect", ATTR_RGBW_COLOR="rgbw_color",
        ColorMode=ColorMode, LightEntity=type("LightEntity", (), {}), LightEntityFeature=LightEntityFeature)
-module("homeassistant.components.switch", SwitchEntity=type("SwitchEntity", (), {}))
 module("homeassistant.components.number", NumberEntity=type("NumberEntity", (), {}), NumberMode=types.SimpleNamespace(SLIDER="slider"))
 module("homeassistant.components.button", ButtonEntity=type("ButtonEntity", (), {}))
 module("homeassistant.components.sensor", SensorEntity=type("SensorEntity", (), {}))
@@ -54,7 +53,6 @@ package = types.ModuleType("lightesota")
 package.__path__ = [str(pathlib.Path(__file__).parents[1] / "custom_components" / "lightesota")]
 sys.modules["lightesota"] = package
 light = importlib.import_module("lightesota.light")
-switch = importlib.import_module("lightesota.switch")
 number = importlib.import_module("lightesota.number")
 button = importlib.import_module("lightesota.button")
 sensor = importlib.import_module("lightesota.sensor")
@@ -90,17 +88,20 @@ class EntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(c.execute.call_args.kwargs["operator"])
 
     async def test_arm_requires_direct_admin_context_disarm_does_not(self):
-        c = coordinator(); arm = switch.LaserArm(c)
+        c = coordinator(); arm = button.LaserArm(c)
         arm._context.user_id = None
-        with self.assertRaises(HomeAssistantError): await arm.async_turn_on()
+        with self.assertRaises(HomeAssistantError): await arm.async_press()
         arm._context.user_id = "admin"; arm._context.parent_id = "automation"
-        with self.assertRaises(HomeAssistantError): await arm.async_turn_on()
+        with self.assertRaises(HomeAssistantError): await arm.async_press()
         c.execute.assert_not_called()
         arm._context.parent_id = None
-        await arm.async_turn_on()
+        arm.hass.auth.async_get_user.return_value.is_admin = False
+        with self.assertRaises(HomeAssistantError): await arm.async_press()
+        arm.hass.auth.async_get_user.return_value.is_admin = True
+        await arm.async_press()
         self.assertEqual(c.execute.call_args.args[0], {"type": "armLasers", "armed": True})
         arm._context.user_id = None
-        await arm.async_turn_off()
+        await button.Action(c, "lasers_off", "Disarm", {"type": "lasersOff"}).async_press()
         self.assertEqual(c.execute.call_args.args[0], {"type": "lasersOff"})
 
     async def test_offline_and_preview_never_publish_available_lights(self):
@@ -119,19 +120,31 @@ class EntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(c.execute.call_args.args[0], {"type": "stopLighting"})
 
     async def test_script_cannot_arm_with_inherited_root_admin_context(self):
-        c = coordinator(); arm = switch.LaserArm(c)
+        c = coordinator(); arm = button.LaserArm(c)
         token = script_stack.set(["script.synthetic_arm"])
         try:
             with self.assertRaises(HomeAssistantError):
-                await arm.async_turn_on()
+                await arm.async_press()
             c.execute.assert_not_called()
-            await arm.async_turn_off()
+            await button.Action(c, "lasers_off", "Disarm", {"type": "lasersOff"}).async_press()
             self.assertEqual(c.execute.call_args.args[0], {"type": "lasersOff"})
         finally:
             script_stack.reset(token)
         c.execute.reset_mock()
-        await arm.async_turn_on()
+        await arm.async_press()
         self.assertEqual(c.execute.call_args.args[0], {"type": "armLasers", "armed": True})
+
+    async def test_arm_is_button_only_status_readonly_and_disarm_available_in_preview(self):
+        c = coordinator()
+        self.assertIsInstance(button.LaserArm(c), sys.modules["homeassistant.components.button"].ButtonEntity)
+        self.assertFalse(hasattr(button.LaserArm(c), "async_turn_on"))
+        c.data["lasers"]["armed"] = True
+        self.assertTrue(sensor.ControlStatus(c).extra_state_attributes["lasers_armed"])
+        c.data["available"] = False
+        disarm = button.Action(c, "lasers_off", "Disarm", {"type": "lasersOff"})
+        self.assertTrue(disarm.available)
+        await disarm.async_press()
+        self.assertFalse(c.execute.call_args.kwargs["operator"])
 
     async def test_sensitivity_and_pan_are_bounded_without_implicit_start(self):
         c = coordinator(); sensitivity = number.Sensitivity(c, "w1", 1); pan = number.Pan(c, "l1", 1)

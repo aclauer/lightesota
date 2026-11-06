@@ -61,7 +61,8 @@ test("lasers are excluded from the pattern engine and old protected ranges migra
   const m = migrateRig(old);
   assert.equal(m.changed, true);
   assert.deepEqual(laserFixtures(m.rig).map((f) => [f.id, f.address]), [["l1", 31], ["l2", 41]]);
-  assert.deepEqual(m.rig.protectedRanges, []);
+  assert.deepEqual(m.rig.protectedRanges, [old.protectedRanges[2]], "haze protection is never cleared by migration");
+  assert.equal(m.rig.fixtures.find((f) => f.id === "h1")!.enabled, false);
   assert.deepEqual(m.rig.fixtures.filter((f) => f.id === "h1").map((f) => f.address), [51]);
   assert.deepEqual(engineFixtures(m.rig).map((f) => f.id), ["w1"]);
   // Running it again is a no-op.

@@ -43,7 +43,7 @@ function validateProfile(raw: unknown): FixtureProfile {
   const p = object(raw, "profile");
   const id = idValue(p.id);
   if (BUILTIN_PROFILES.some((b) => b.id === id)) throw new Error("Custom profiles cannot shadow a built-in profile");
-  if (p.kind && p.kind !== "light") throw new Error("Custom laser profiles are reserved");
+  if (p.kind && p.kind !== "light") throw new Error("Custom laser/haze profiles are reserved");
   if (!["dmx", "hue"].includes(p.transport as string) || !["rgb", "rgbw", "rgbaw-uv", "dimmer"].includes(p.colorModel as string)) throw new Error("Invalid profile transport/color model");
   const channels = array(p.channels, "channels").map((raw) => {
     const c = object(raw, "channel");
@@ -95,21 +95,20 @@ export function validateRig(raw: unknown): Rig {
       fx.address = finite(f.address, 1, 513 - p.channels.length, "address", true);
       const end = fx.address + p.channels.length - 1;
       const laser = p.id === "chauvet-scorpion-dual-rgb-ils-10ch";
+      const haze = p.id === "chauvet-hurricane-haze-4d-2ch";
+      if (haze && fx.address !== 51) throw new Error("Haze address is reserved at 51 with the fixed built-in 2CH profile");
       if (laser && ![31, 41].includes(fx.address)) throw new Error("Laser addresses are reserved at 31 and 41");
-      if (!laser && fx.address <= 52 && end >= 31) throw new Error("Channels 31–52 are reserved for guarded lasers and uncommissioned haze");
+      if (!laser && !haze && fx.address <= 52 && end >= 31) throw new Error("Channels 31–52 are reserved for guarded lasers and uncommissioned haze");
       for (let c = fx.address; c <= end; c++) {
         const key = `${fx.universe}:${c}`;
         if (occupied.has(key)) throw new Error(`Fixture overlap: ${id} and ${occupied.get(key)} at ${c}`);
         occupied.set(key, id);
       }
-      if (fx.enabled && rig.protectedRanges.some((r) => r.universe === fx.universe && r.from <= end && r.to >= fx.address!)) throw new Error(`Fixture ${id} overlaps a protected range`);
+      if (fx.enabled && !haze && rig.protectedRanges.some((r) => r.universe === fx.universe && r.from <= end && r.to >= fx.address!)) throw new Error(`Fixture ${id} overlaps a protected range`);
     } else if (f.hueLightId !== undefined) fx.hueLightId = textValue(f.hueLightId, "Hue light id", 100);
     rig.fixtures.push(fx);
   }
-  // Haze is an installed/commissioned=false gate in this release; never removable by import.
-  for (const universe of new Set([0, ...rig.fixtures.map((f) => f.universe ?? 0)])) {
-    if (!rig.protectedRanges.some((r) => r.universe === universe && r.from <= 51 && r.to >= 52)) rig.protectedRanges.push({ universe, from: 51, to: 52, reason: "Hazer uncommissioned: output always zero" });
-  }
+  // Preserve explicit protected ranges. The immutable process gate also protects haze.
   return rig;
 }
 export function validateSettings(raw: unknown): Settings {
@@ -131,7 +130,7 @@ export function validateScene(raw: unknown, rig: Rig): Scene {
   idValue(s.id); textValue(s.name, "scene name"); if (s.patternId !== null) idValue(s.patternId);
   object(s.params, "scene params"); finite(s.master, 0, 1, "master"); finite(s.speed, 0, 4, "speed"); if (s.bpm !== null) finite(s.bpm, 20, 300, "bpm");
   for (const [id, ov] of Object.entries(object(s.overrides, "overrides"))) {
-    const f = rig.fixtures.find((f) => f.id === id); if (!f || findProfile(f.profileId, rig.customProfiles)?.kind === "laser") throw new Error("Scene override must target an ordinary fixture");
+    const f = rig.fixtures.find((f) => f.id === id); if (!f || ["laser", "haze"].includes(findProfile(f.profileId, rig.customProfiles)?.kind ?? "")) throw new Error("Scene override must target an ordinary fixture");
     s.overrides[id] = validateOverride(ov);
   }
   if (s.washes !== undefined) for (const [id, wash] of Object.entries(object(s.washes, "scene washes"))) {

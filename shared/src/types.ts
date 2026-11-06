@@ -329,7 +329,7 @@ export interface Settings {
 }
 
 export interface OutputStatus {
-  control?: { preview: boolean; commissioned: boolean; physicalState: "unverified"; authority: "lightesota" };
+  control?: { preview: boolean; commissioned: boolean; hazeCommissioned: boolean; hazeDisabledReason: string | null; physicalState: "unverified"; authority: "lightesota" };
   artnet: { sending: boolean; fps: number; lastSentAt: number; frames: number; error?: string };
   upstream: { listening: boolean; lastFrameAt: number; from: string; frames: number };
   hue: { connected: boolean; lights: number; lastError?: string };

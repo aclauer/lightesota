@@ -26,5 +26,6 @@ class ControlStatus(LightesotaEntity, SensorEntity):
     def extra_state_attributes(self):
         return {**super().extra_state_attributes, "ownership": self.state_data.get("ownership"),
                 "stopped": self.state_data.get("stopped"), "blackout": self.state_data.get("blackout"),
+                "lasers_armed": self.state_data.get("lasers", {}).get("armed", False),
                 "coordinated_show": self.state_data.get("coordinatedShow"),
                 "control_boundary_ms": self.state_data.get("controlledAt")}

@@ -79,6 +79,6 @@ async def async_setup(hass, config):
     hass.data[DOMAIN] = coordinator
     # Failed startup stays unavailable and polls again; never restore HA's saved On state.
     await coordinator.async_refresh()
-    for platform in ("light", "number", "switch", "button", "sensor"):
+    for platform in ("light", "number", "button", "sensor"):
         hass.async_create_task(discovery.async_load_platform(hass, platform, DOMAIN, {}, config))
     return True

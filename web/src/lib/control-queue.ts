@@ -1,10 +1,10 @@
 import type { ClientMessage } from "@lightesota/shared";
 
 const CONTROL_TYPES = new Set([
-  "setPattern", "setParams", "setMaster", "setBlackout", "setSpeed", "setCrossfade", "setBpm", "tap", "resync", "nudge", "setOverride", "clearOverrides", "setSolo", "armLasers", "setLaser", "setLaserLook", "followPatternLasers", "lasersOff", "setReleased", "recallScene", "playPlaylist", "stopPlaylist", "playlistNext", "playlistPrev", "testFixture", "setFollowMicBpm", "setSleep", "stopLighting", "takeManualControl", "setWash", "releaseWashes", "quickLook", "startCoordinatedShow",
+  "setPattern", "setParams", "setMaster", "setBlackout", "setSpeed", "setCrossfade", "setBpm", "tap", "resync", "nudge", "setOverride", "clearOverrides", "setSolo", "armLasers", "setLaser", "setLaserLook", "followPatternLasers", "lasersOff", "setReleased", "recallScene", "playPlaylist", "stopPlaylist", "playlistNext", "playlistPrev", "testFixture", "setFollowMicBpm", "setSleep", "stopLighting", "takeManualControl", "setWash", "releaseWashes", "quickLook", "startCoordinatedShow", "setHaze", "hazeOff",
 ]);
 export const isQueuedControl = (msg: ClientMessage) => CONTROL_TYPES.has(msg.type);
-export const isImmediateStop = (msg: ClientMessage) => msg.type === "stopLighting" || msg.type === "lasersOff" || (msg.type === "armLasers" && !msg.armed) || (msg.type === "setBlackout" && msg.blackout) || (msg.type === "setReleased" && msg.released);
+export const isImmediateStop = (msg: ClientMessage) => msg.type === "stopLighting" || msg.type === "lasersOff" || msg.type === "hazeOff" || (msg.type === "setHaze" && msg.armed === false) || (msg.type === "armLasers" && !msg.armed) || (msg.type === "setBlackout" && msg.blackout) || (msg.type === "setReleased" && msg.released);
 
 type Waiter = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 type Entry = { msg: ClientMessage; generation: number | undefined; key: string | null; waiters: Waiter[] };
@@ -79,6 +79,7 @@ function coalesceKey(msg: ClientMessage): string | null {
     case "setParams": return JSON.stringify([msg.type, msg.merge !== false, Object.keys(msg.params).sort()]);
     case "setWash": return msg.patch.mode === undefined ? JSON.stringify([msg.type, [...msg.fixtureIds].sort(), Object.keys(msg.patch).sort()]) : null;
     case "setLaser": return msg.state.mode === undefined ? JSON.stringify([msg.type, msg.fixtureId, Object.keys(msg.state).sort()]) : null;
+    case "setHaze": return msg.armed === undefined && msg.runSec === undefined ? JSON.stringify([msg.type, Object.keys(msg).filter(k => !["type", "generation", "reqId"].includes(k)).sort()]) : null;
     case "setOverride": return msg.override ? JSON.stringify([msg.type, msg.fixtureId, Object.keys(msg.override).sort()]) : null;
     default: return null;
   }

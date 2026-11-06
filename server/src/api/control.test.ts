@@ -109,3 +109,29 @@ test("side migration changes only exact historical tags, never user placement or
   assert.deepEqual(migrated.rig.fixtures[2].tags,["wash","left","back","custom"]);
   assert.equal(migrateRig(migrated.rig).changed,false);
 });
+
+test("guest unmute cannot activate admin laser intent staged through REST while muted", () => {
+  const ctx = setup();
+  const post = (command: unknown, admin = false) => {
+    const r = response(); machineCommand(ctx, request(command, ctx.show.state.generation, `Bearer fake-${admin ? "admin" : "guest"}-test-only`), r as unknown as Response); return r;
+  };
+  try {
+    ctx.show.setWash(["w1"], {mode:"music6", brightness:38});
+    assert.equal(post({type:"setBlackout",blackout:true}).code,200);
+    assert.equal(post({type:"armLasers",armed:true},true).code,200);
+    const before=JSON.stringify(ctx.show.state);
+    const staged=post({type:"setLaser",fixtureId:"l1",state:{mode:"manual",color:"cyan"}},true);
+    const afterStaging=JSON.stringify(ctx.show.state);
+    assert.equal(post({type:"setBlackout",blackout:false}).code,200);
+    assert.equal(controlState(ctx).lasers.fixtures.l1?.mode ?? "off","off","guest unmute must not activate the staged REST preset");
+    assert.equal(staged.code,400,"emitting intent must be refused before guest unmute");
+    assert.equal(afterStaging,before,"refusal must be atomic");
+    assert.equal(ctx.show.state.lasers.armed,false);
+    assert.equal(ctx.show.state.lasers.fixtures.l1?.mode ?? "off","off");
+    assert.equal(controlState(ctx).washes.w1.commandedBrightness,38,"wash mute remains reversible");
+    assert.equal(post({type:"setLaser",fixtureId:"l1",state:{mode:"manual"}}).code,403);
+    assert.equal(post({type:"armLasers",armed:true},true).code,200);
+    assert.equal(post({type:"setLaser",fixtureId:"l1",state:{mode:"manual",color:"cyan"}},true).code,200);
+    assert.equal(controlState(ctx).lasers.fixtures.l1.mode,"manual","fresh operator Start works after unmute");
+  } finally { ctx.show.stop(); ctx.library.flush(); }
+});

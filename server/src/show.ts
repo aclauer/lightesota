@@ -4,11 +4,13 @@ import {
   defaultWashState, washFixtures, washSide, validateWashPatch, QUICK_LOOKS, COORDINATED_SHOWS, engineFixtures, isLaserFixture,
   type WashPatch, type WashState, type QuickLookId, type CoordinatedShowParams,
   defaultParams, sanitizeParams, defaultLasersState, defaultLaserState, sanitizeLaserState, laserFixtures, findLaserLook, LASER_LOOK_PATTERN,
-  defaultHazeState, sanitizeHaze, hazeFixtures, hazeRunning, HAZE_MAX_RUN_SEC,
+  defaultHazeState, sanitizeHaze, validateHazePatch, hazeFixtures, hazeRunning, type HazePatch,
   type AudioFrame, type LaserState, type FixtureOverride, type ParamValues, type Rig, type Scene, type Settings, type ShowState, type Playlist,
 } from "../../shared/src/index.js";
 import { Engine } from "./engine/engine.js";
 import type { Library } from "./library.js";
+import { requireHazeOutput } from "./output/policy.js";
+import { planUniverse } from "./output/dmx.js";
 import { JsonFile } from "./store.js";
 
 interface ShowEvents { show: [ShowState]; toast: [{ level: "info" | "success" | "warning" | "error"; text: string }]; }
@@ -23,6 +25,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
   private emitTimer: NodeJS.Timeout | null = null;
   private audioTimer: NodeJS.Timeout;
   private lookTimer: NodeJS.Timeout;
+  private hazeTimer: NodeJS.Timeout;
   private flashes = new Map<NodeJS.Timeout, string>();
   private runClock: { started: number; lastBeat: number; beats: number; lastLaserAt: number; laserPhrase: number } | null = null;
 
@@ -61,7 +64,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
       lasers: defaultLasersState(),
       haze: defaultHazeState(),
     };
-    setInterval(() => this.hazeTick(), 1000).unref();
+    this.hazeTimer = setInterval(() => this.hazeTick(), 1000); this.hazeTimer.unref();
     this.engine.washes = this.state.washes;
     for (const f of washFixtures(this.getRig())) this.state.washes[f.id] = defaultWashState();
     this.audioTimer = setInterval(() => this.audioTick(), 500); this.audioTimer.unref();
@@ -116,7 +119,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
   stop() {
     this.stopLighting(); this.engine.stop();
     this.library.off("patterns", this.onLibraryPatterns);
-    clearInterval(this.audioTimer); clearInterval(this.lookTimer);
+    clearInterval(this.audioTimer); clearInterval(this.lookTimer); clearInterval(this.hazeTimer);
     if (this.emitTimer) clearTimeout(this.emitTimer); this.emitTimer = null;
     this.file.set(this.state); this.file.flush();
   }
@@ -148,6 +151,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
     this.invalidatePatternLasers(); this.loadedLaserPattern = null; this.patternSource = null;
     this.runClock = null; this.state.coordinatedShow = null;
     this.state.lasers = defaultLasersState();
+    this.clearHaze();
     for (const f of washFixtures(this.getRig())) this.state.washes[f.id] = { ...(this.state.washes[f.id] ?? defaultWashState()), mode: "off", owner: "manual" };
     this.state.patternId = null; this.state.outgoingPatternId = null; this.state.params = {};
     this.state.overrides = {}; this.engine.overrides = {};
@@ -224,6 +228,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
   quickLook(id: QuickLookId, ids = washFixtures(this.getRig()).map((f) => f.id)) {
     if (!QUICK_LOOKS.some((look) => look.id === id)) throw new Error("Unknown quick look");
     if (id === "laser-duo") {
+      this.requireLaserStart();
       if (!this.state.lasers.armed) throw new Error("Arm lasers, then explicitly Start the duo");
       this.ownershipBarrier(); this.invalidatePatternLasers(); this.cancelShowLasers();
       this.state.lasers.look = null;
@@ -250,6 +255,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
     if (!Number.isFinite(durationSec) || durationSec < 10 || durationSec > 900) throw new Error("Duration must be 10..900 seconds");
     if (!Number.isInteger(ceiling) || ceiling < 1 || ceiling > 102) throw new Error("Wash ceiling must be 1..102 / 255");
     if (params.includeLasers !== undefined && typeof params.includeLasers !== "boolean") throw new Error("includeLasers must be boolean");
+    if (params.includeLasers) this.requireLaserStart();
     if (params.includeLasers && !this.state.lasers.armed) throw new Error("Arm lasers before explicitly including them in a show");
     const armed = { armed: this.state.lasers.armed, armedAt: this.state.lasers.armedAt, armedBy: this.state.lasers.armedBy };
     this.ownershipBarrier(); this.stopPlaylist(false); this.cancelCoordinatedShow(true);
@@ -320,6 +326,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
     if (run.includeLasers) {
       this.cancelShowLasers();
       this.state.lasers = defaultLasersState();
+      this.clearHaze();
     }
     this.state.coordinatedShow = null; this.runClock = null;
     this.engine.refresh();
@@ -501,7 +508,8 @@ export class ShowController extends EventEmitter<ShowEvents> {
   setMaster(v: number) { if (!Number.isFinite(v)) throw new Error("Master must be finite"); this.ownershipBarrier(); this.state.master = clamp01(v); this.engine.master = this.state.master; this.engine.refresh(); this.changed(); }
   setBlackout(b: boolean) {
     this.ownershipBarrier();
-    if (b) this.lasersOff("temporary mute");
+    // Both edges discard effects staged under a gate; only wash mute is reversible.
+    if (b || this.state.blackout) this.lasersOff("temporary mute/release");
     this.state.blackout = b; this.engine.blackout = b; this.engine.refresh(); this.changed();
   }
   setSpeed(v: number) { if (!Number.isFinite(v)) throw new Error("Speed must be finite"); this.ownershipBarrier(); this.state.speed = Math.max(0, Math.min(4, v)); this.engine.speed = this.state.speed; this.changed(); }
@@ -513,31 +521,46 @@ export class ShowController extends EventEmitter<ShowEvents> {
   }
 
   // ---- haze (operator-only, timed runs; see shared/src/haze.ts) ----
-  setHaze(msg: { armed?: boolean; fan?: number; output?: number; runSec?: number }, by: string) {
-    const H = this.state.haze;
-    if (hazeFixtures(this.getRig()).length === 0) throw new Error("No enabled hazer in the rig");
+  setHaze(raw: HazePatch, by: string) {
+    const msg = validateHazePatch(raw), H = this.state.haze;
     if (msg.armed === false) { this.hazeOff(by); return; }
-    if (msg.armed === true && !H.armed) { H.armed = true; H.armedBy = by || "admin"; this.emit("toast", { level: "warning", text: `Haze armed by ${H.armedBy}` }); }
-    Object.assign(H, sanitizeHaze(msg, H));
-    if (typeof msg.runSec === "number" && Number.isFinite(msg.runSec)) {
-      if (msg.runSec <= 0) H.runUntil = null;
-      else {
-        if (!H.armed) throw new Error("Arm the hazer first");
-        H.runUntil = Date.now() + Math.min(HAZE_MAX_RUN_SEC, msg.runSec) * 1000;
-      }
+    const start = msg.runSec !== undefined && msg.runSec > 0;
+    if (msg.armed === true || start || hazeRunning(H)) {
+      requireHazeOutput();
+      if (this.state.blackout || this.state.released) throw new Error("Clear temporary mute/release before a fresh haze arm/Start");
+      const rig = this.getRig(), universe = this.getSettings().artnet.universe;
+      const blocked = new Set(planUniverse(rig, universe).blocked.map(f => f.fixtureId));
+      if (!hazeFixtures(rig).some(f => f.address === 51 && (f.universe ?? 0) === universe && !blocked.has(f.id))) throw new Error("No enabled, unprotected hazer in the output universe");
+      if (start && !H.armed && msg.armed !== true) throw new Error("Arm the hazer first");
     }
-    this.changed();
+    this.ownershipBarrier();
+    Object.assign(H, sanitizeHaze(msg, H));
+    if (msg.armed === true && !H.armed) {
+      H.armed = true; H.armedBy = by || "admin";
+      H.runUntil = null; // Arm alone never restores a run.
+      this.emit("toast", { level: "warning", text: `Haze armed by ${H.armedBy}` });
+    }
+    if (msg.runSec !== undefined) H.runUntil = start ? Date.now() + msg.runSec * 1000 : null;
+    if (start) this.state.stopped = false;
+    this.engine.refresh(); this.changed();
+  }
+  private clearHaze() {
+    const H = this.state.haze;
+    H.runUntil = null; H.armed = false; H.armedBy = null;
   }
   hazeOff(by: string) {
-    const H = this.state.haze;
-    const was = hazeRunning(H) || H.armed;
-    H.runUntil = null; H.armed = false; H.armedBy = null;
+    const was = hazeRunning(this.state.haze) || this.state.haze.armed;
+    this.ownershipBarrier(); this.clearHaze();
     if (was) this.emit("toast", { level: "info", text: `Haze off (${by || "control"})` });
-    this.changed();
+    this.engine.refresh(); this.changed();
   }
   private hazeTick() {
     const H = this.state.haze;
-    if (H.runUntil !== null && H.runUntil <= Date.now()) { H.runUntil = null; this.emit("toast", { level: "info", text: "Haze run finished" }); this.changed(); }
+    if (H.runUntil !== null && H.runUntil <= Date.now()) {
+      this.ownershipBarrier(); this.clearHaze();
+      this.emit("toast", { level: "info", text: "Haze run finished" });
+      this.engine.refresh(); this.changed();
+    }
   }
 
   // ---- lasers (operator-approved presets only; see shared/src/laser.ts) ----
@@ -556,12 +579,17 @@ export class ShowController extends EventEmitter<ShowEvents> {
     }
     this.changed();
   }
+  private requireLaserStart() {
+    if (this.state.blackout || this.state.released) throw new Error("Clear temporary mute/release, then make a fresh operator Start");
+  }
   setLaser(fixtureId: string, patch: Partial<LaserState>) {
     if (!laserFixtures(this.getRig()).some((f) => f.id === fixtureId)) throw new Error("Not an enabled laser fixture");
+    const prev = this.state.lasers.fixtures[fixtureId] ?? defaultLaserState();
+    const next = sanitizeLaserState({ ...prev, ...patch }, prev);
+    if (next.mode !== "off") this.requireLaserStart();
     this.ownershipBarrier(); this.invalidatePatternLasers();
     this.cancelShowLasers();
-    const prev = this.state.lasers.fixtures[fixtureId] ?? defaultLaserState();
-    this.state.lasers.fixtures[fixtureId] = sanitizeLaserState({ ...prev, ...patch }, prev);
+    this.state.lasers.fixtures[fixtureId] = next;
     if (!this.state.lasers.armed) this.state.lasers.fixtures[fixtureId].mode = "off";
     if (this.state.lasers.fixtures[fixtureId].mode !== "off") this.state.stopped = false;
     this.state.lasers.look = null; // a hand edit takes over from any look
@@ -606,6 +634,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
     }
     if (lookId === null) { this.ownershipBarrier(); this.invalidatePatternLasers(); this.cancelShowLasers(); this.state.lasers.look = null; this.changed(); return; }
     const look = findLaserLook(lookId);
+    this.requireLaserStart();
     if (!this.state.lasers.armed) throw new Error("Arm lasers, then explicitly Start a preset or look");
     if (!look) throw new Error(`Unknown laser look ${lookId}`);
     this.ownershipBarrier(); this.invalidatePatternLasers();
@@ -636,11 +665,12 @@ export class ShowController extends EventEmitter<ShowEvents> {
   private laserLookTick() {
     if (this.patternLaserOwner && !this.hasPatternLaserOwnership()) return;
     const look = findLaserLook(this.state.lasers.look);
-    if (!look || !look.animated || !this.state.lasers.armed) return;
+    if (!look || !look.animated || !this.state.lasers.armed || this.state.blackout || this.state.released || this.state.stopped) return;
     if (this.applyLook()) this.changed();
   }
   /** Every laser to its dark state and the arm dropped. */
   lasersOff(by: string) {
+    this.clearHaze();
     this.ownershipBarrier(); this.invalidatePatternLasers();
     this.cancelShowLasers();
     const L = this.state.lasers;

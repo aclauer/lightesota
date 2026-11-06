@@ -8,6 +8,7 @@ import { config } from '../config.js';
 import { defaultRig, defaultSettings } from '../defaults.js';
 import { Library } from '../library.js';
 import { ShowController } from '../show.js';
+import { WsHub } from './ws.js';
 import { dispatchControl } from './commands.js';
 import { controlState } from './control.js';
 import type { AppContext } from './context.js';
@@ -147,4 +148,48 @@ test('the output frame observes the current typed laser result, including Off on
   show.engine.once('frame',()=>observed.push(show.state.lasers.fixtures.l1.mode));
   internal.onWorkerMessage({type:'frame',buf:new Float32Array(32),errorA:'render failed',errorB:null,renderMs:0,logs:[],lasers:[],revision:show.engine.patternRevision,generation:show.engine.patternGeneration});
   assert.equal(observed[0],'off','the same output frame must see Off, without one stale laser frame');
+});
+
+test('shared laser writers refuse muted or released Starts atomically and drafts cannot restart', (t) => {
+  const {show,command,load,follow} = setup(t);
+  for (const gate of ['blackout','released'] as const) {
+    for (const write of [
+      () => show.setLaser('l1',{mode:'manual',color:'cyan'}),
+      () => show.setLaserLook('breathe'),
+      () => show.quickLook('laser-duo'),
+      () => show.startCoordinatedShow({id:'neon-exchange',fixtureIds:['w1'],includeLasers:true}),
+      () => show.followPatternLasers(show.state.patternId ?? '', show.engine.patternRevision),
+    ]) {
+      show.stopLighting(); load();
+      if (gate==='blackout') show.setBlackout(true); else show.setReleased(true);
+      show.armLasers(true,'operator');
+      const before=JSON.stringify(show.state);
+      assert.throws(write,/mute|release/i);
+      assert.equal(JSON.stringify(show.state),before,'rejection cannot mutate washes, presets, ownership or generation');
+      show.setLaser('l1',{pan:70});
+      assert.equal(show.state.lasers.fixtures.l1.mode,'off');
+      command(gate==='blackout'?{type:'setBlackout',blackout:false}:{type:'setReleased',released:false});
+      assert.equal(show.state.lasers.armed,false);
+      assert.equal(show.state.lasers.look,null);
+      assert.ok(Object.values(show.state.lasers.fixtures).every(v=>v.mode==='off'));
+      show.setBlackout(false);
+    }
+  }
+});
+
+
+test('actual WS handler refuses gated laser Starts and guests cannot restore laser intent on unmute', (t) => {
+  const {show,ctx}=setup(t);
+  const replies:any[]=[];
+  const hub=Object.assign(Object.create(WsHub.prototype),{ctx,clients:new Map()}) as any;
+  const client={role:'guest',name:'test',ws:{readyState:1,send:(text:string)=>replies.push(JSON.parse(text))}};
+  const ws=(cmd:object,role='guest')=>{client.role=role;hub.onMessage(client,JSON.stringify({...cmd,reqId:'test',generation:show.state.generation}));return replies.at(-1);};
+  ws({type:'setBlackout',blackout:true});ws({type:'armLasers',armed:true},'admin');
+  for(const cmd of [{type:'setLaser',fixtureId:'l1',state:{mode:'manual'}},{type:'setLaserLook',lookId:'breathe'},{type:'quickLook',lookId:'laser-duo'},{type:'startCoordinatedShow',params:{id:'neon-exchange',fixtureIds:['w1'],includeLasers:true}}]) {
+    const before=JSON.stringify(show.state);
+    assert.match(ws(cmd,'admin').text,/mute|release/);assert.equal(JSON.stringify(show.state),before);
+    assert.match(ws(cmd).text,/Not allowed/);assert.equal(JSON.stringify(show.state),before);
+  }
+  assert.equal(ws({type:'setBlackout',blackout:false}).type,'ack');
+  assert.equal(show.state.lasers.armed,false);assert.equal(show.state.lasers.look,null);
 });

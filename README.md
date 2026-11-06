@@ -135,13 +135,21 @@ Laser sound sensitivity remains physical S5 at 031/041, with no DMX sensitivity 
 
 ## Haze
 
-The hazer is a fixture with the same operator-only treatment as the lasers: patterns never see it,
-the agent has no tool for it, and the **Haze** card on Live is the only way to run it. An admin arms
-it, sets blower speed and haze output, and starts a **timed run** (30 s to 10 min, 20 min at most);
-the output drops to zero by itself when the run ends. Blackout holds it at zero, "Haze off" (anyone
-with control) stops it and disarms, and every server start comes up disarmed. The Haze 4D keeps
-emitting a little while fluid is in the line, so power it down when done, and never run haze
-without the building's approval for detectors and ventilation.
+Andrew's Haze card, Hurricane Haze 4D profile, preview and timed runs are retained
+as future capability. **Haze is uncommissioned: channels 51–52 stay zero.** New and
+migrated fixtures are disabled; existing saved enabled fixtures remain blocked by
+the immutable process gate. Arm/Start require `LIGHTESOTA_HAZE_COMMISSIONED=1`
+plus whole-output commissioning, and preview still vetoes them. No UI, import or
+API can enable this gate or silently remove saved protected ranges.
+
+Future attended commissioning needs building approval for detectors/ventilation,
+physical testing and explicit fixture/protection review; see the
+[migration procedure](docs/deployment/migration.md). After commissioning, only an
+admin can arm/start a timed run (up to 20 minutes). Haze off is available to control
+roles. Stop, global manual takeover, disarm, release, mute and restart cancel runs;
+unmute never restarts them. Patterns, ordinary overrides and AI cannot drive haze.
+The unit may continue emitting fluid already in the line; software Off is not a
+physical isolation procedure.
 
 ## Writing patterns
 
@@ -169,7 +177,7 @@ pattern that hangs is disabled rather than freezing the show. Built-ins live in
 ## Safety rules this app keeps
 
 - The hazer (51–52) is uncommissioned and held at 0, including with upstream data.
-  The fixture editor refuses addresses that overlap it.
+  Only the fixed built-in haze profile may occupy those addresses; it remains gated.
 - Lasers are written only from the bounded preset tables in `shared/src/laser.ts`, only while armed.
   Pattern laser output additionally requires an operator to select **Follow** for the current loaded source.
   Applying/reloading/editing the pattern or its parameters, Stop, disarm and manual takeover invalidate Follow.
@@ -192,3 +200,5 @@ patterns/ built-in patterns
 
 `npm test` runs server control/output/API regressions and fake browser audio/WebSocket tests.
 See the [HA adapter tests](integrations/home_assistant/README.md#offline-validation) for Python checks.
+
+Changes in this integration are recorded in the [2026-11-06 change log](docs/lighting-integration-changelog.md).

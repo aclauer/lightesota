@@ -37,10 +37,10 @@ export function defaultRig(): Rig {
       spot(2, 30, 6.0, 4.0, ["right", "center"]),
       laser(1, 31, 3.5, 0.6, ["left", "front"]),
       laser(2, 41, 6.5, 0.6, ["right", "front"]),
-      { id: "h1", name: "Hazer", profileId: "chauvet-hurricane-haze-4d-2ch", universe: 0, address: 51, x: 9.2, y: 4.0, rotation: 0, tags: ["haze"], enabled: true },
+      { id: "h1", name: "Hazer", profileId: "chauvet-hurricane-haze-4d-2ch", universe: 0, address: 51, x: 9.2, y: 4.0, rotation: 0, tags: ["haze"], enabled: false },
     ],
     customProfiles: [],
-    protectedRanges: [],
+    protectedRanges: [{ universe: 0, from: 51, to: 52, reason: "Hazer uncommissioned" }],
   };
 }
 
@@ -50,13 +50,12 @@ export function defaultRig(): Rig {
  */
 export function migrateRig(input: Rig): { rig: Rig; changed: boolean } {
   let rig = input, changed = false;
-  // Hazer: a protected 2-channel range becomes a fixture (2026-11-06, Hurricane Haze 4D on d051).
-  const hazeRange = rig.protectedRanges.find((r) => /haze/i.test(r.reason) && r.to - r.from === 1);
-  if (hazeRange && !rig.fixtures.some((f) => f.profileId === "chauvet-hurricane-haze-4d-2ch")) {
+  // Add the fixed haze profile as disabled future capability; retain every saved protection.
+  const hazeRange = rig.protectedRanges.find((r) => /haze/i.test(r.reason) && r.from === 51 && r.to === 52);
+  if (hazeRange && !rig.fixtures.some((f) => f.id === "h1" || f.profileId === "chauvet-hurricane-haze-4d-2ch")) {
     rig = {
       ...rig,
-      fixtures: [...rig.fixtures, { id: "h1", name: "Hazer", profileId: "chauvet-hurricane-haze-4d-2ch", universe: hazeRange.universe, address: hazeRange.from, x: 9.2, y: 4.0, rotation: 0, tags: ["haze"], enabled: true }],
-      protectedRanges: rig.protectedRanges.filter((r) => r !== hazeRange),
+      fixtures: [...rig.fixtures, { id: "h1", name: "Hazer", profileId: "chauvet-hurricane-haze-4d-2ch", universe: hazeRange.universe, address: hazeRange.from, x: 9.2, y: 4.0, rotation: 0, tags: ["haze"], enabled: false }],
     };
     changed = true;
   }

@@ -1,4 +1,5 @@
 import { findProfile, type Fixture, type ProtectedRange, type Rig, type WashState } from "../../../shared/src/index.js";
+import { HAZE_VETO } from "./policy.js";
 import { OUT_STRIDE } from "../engine/sandbox.js";
 
 export interface DmxPlan {
@@ -18,7 +19,7 @@ export function planUniverse(rig: Rig, universe: number): DmxPlan {
   const owner = new Array<string | null>(512).fill(null);
   const blocked: DmxPlan["blocked"] = [];
   const conflicts: DmxPlan["conflicts"] = [];
-  protectedMask[50] = 1; protectedMask[51] = 1; // Haze commissioning gate is false in this release.
+  if (HAZE_VETO) { protectedMask[50] = 1; protectedMask[51] = 1; }
   for (const r of rig.protectedRanges) {
     if (r.universe !== universe) continue;
     for (let c = r.from; c <= r.to; c++) if (c >= 1 && c <= 512) protectedMask[c - 1] = 1;
@@ -29,9 +30,11 @@ export function planUniverse(rig: Rig, universe: number): DmxPlan {
     if (!p || p.transport !== "dmx" || (f.universe ?? 0) !== universe || !f.address) continue;
     const start = f.address - 1, end = start + p.channels.length;
     const laser = p.id === "chauvet-scorpion-dual-rgb-ils-10ch";
-    if ((!laser && start < 52 && end > 30) || (laser && ![31, 41].includes(f.address))) {
+    const haze = p.id === "chauvet-hurricane-haze-4d-2ch";
+    if ((!laser && !haze && start < 52 && end > 30) || (laser && ![31, 41].includes(f.address)) || (haze && f.address !== 51)) {
       blocked.push({ fixtureId: f.id, reason: "reserved guarded laser / uncommissioned haze channels" }); continue;
     }
+    if (haze && HAZE_VETO) { blocked.push({ fixtureId: f.id, reason: "Haze uncommissioned or process output vetoed" }); continue; }
     let hitProtected: ProtectedRange | undefined;
     for (let c = start; c < end && c < 512; c++) {
       if (protectedMask[c]) hitProtected = rig.protectedRanges.find((r) => r.universe === universe && c + 1 >= r.from && c + 1 <= r.to);
@@ -59,7 +62,7 @@ export function renderUniverse(
     const f = fixtures[i];
     if (!f.enabled || (f.universe ?? 0) !== universe || !f.address || blocked.has(f.id)) continue;
     const p = findProfile(f.profileId, rig.customProfiles);
-    if (!p || p.transport !== "dmx" || p.kind === "laser") continue;
+    if (!p || p.transport !== "dmx" || (p.kind === "laser" || p.kind === "haze")) continue;
     const o = i * OUT_STRIDE;
     const r = values[o], g = values[o + 1], b = values[o + 2], w = values[o + 3], a = values[o + 4], uv = values[o + 5];
     const dim = values[o + 6], strobe = values[o + 7];

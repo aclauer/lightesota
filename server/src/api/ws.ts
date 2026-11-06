@@ -1,7 +1,7 @@
 import type { Server } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { nanoid } from "nanoid";
-import { type LaserState,
+import {
   requiredRole, roleAllows, type ClientMessage, type Presence, type Role, type ServerMessage, type Rig, type Settings,
 } from "../../../shared/src/index.js";
 import { deepMerge } from "../store.js";
@@ -173,8 +173,6 @@ export class WsHub {
         this.broadcastPresence();
         return;
       }
-      case "setHaze": show.setHaze({ armed: msg.armed, fan: msg.fan, output: msg.output, runSec: msg.runSec }, client.name || "admin"); return;
-      case "hazeOff": show.hazeOff(client.name || "someone"); return;
       case "saveScene": return show.captureScene(msg.name, msg.sceneId);
       case "updateScene": {
         const s = library.scenes.find((x) => x.id === msg.scene.id);

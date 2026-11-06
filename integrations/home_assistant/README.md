@@ -19,7 +19,7 @@ operator action; no live migration has been performed.
    in your own HA `secrets.yaml`. This repository contains no credentials. The
    guest sharing permission must be **control** or **edit**, not view. Supplying
    only the control token creates wash controls and Stop/manual actions; laser
-   entities stay unavailable without an operator token and the arm switch is absent.
+   entities stay unavailable without an operator token and the arm button is absent.
 4. Reconcile entity IDs as described below, then optionally merge
    [example.package.yaml](example.package.yaml) and
    [example.dashboard.yaml](example.dashboard.yaml) into the existing Office
@@ -40,17 +40,18 @@ store; certificate verification is never disabled and redirects are not followed
 | `button.office_dmx_w1_release_to_pattern` … `w4` | Explicitly releases that wash to the current pattern. |
 | `light.office_laser_1_preset`, `light.office_laser_2_preset` | Allowlisted effects `Fan cyan`, `Wave magenta`, other existing single colors, and `Music multicolor` / `Music cyan` etc. Requires operator token, admin HA caller and existing software arm. Generic On without a named effect is rejected. No brightness control, raw bytes or automatic arm. |
 | `number.office_laser_1_pan`, `…2_pan` | Bounded 48–80; operator only. Changing pan while Off never supplies a Start/mode. Manual preset actions use centered 64; zoom53/tilt64 and no dedicated strobe. |
-| `switch.lightesota_operator_laser_arm` | Arming requires a direct HA administrator user action with neither a parent Context nor an active native script execution stack. Scripts can inherit a root admin Context unchanged, so both checks are required. Arm alone emits nothing. Disarm clears intents; a new explicit preset action is needed after rearming. Never include arm in scenes, scripts or automations. |
+| `button.lightesota_operator_laser_arm` | A dedicated press, never scene-restorable state. Requires an HA admin, no parent Context and an empty native script stack. Native `scene.turn_on` / `scene.apply` cannot press it; scripts/automations cannot arm. Arm alone emits nothing; make a new explicit preset action. |
+| `button.lightesota_all_lasers_off_disarm` | Clears laser intent and disarms (also cancels haze). Uses the control token, including from scripts, while the API is reachable. |
 | `button.lightesota_stop_lighting_all_off` | One shared strong Stop: cancels writers, clears effects and disarms. Does not depend on six sequential light Off calls. Available whenever the control service is reachable, including preview/released output. |
 | `button.lightesota_take_manual_control` | Cancels automated writers, holds current washes, clears/disarms lasers. Direct per-wash adjustment takes over only the selected wash. |
-| `sensor.lightesota_control_status` | Authority, generation, Stop/blackout/run state; available while the API is reachable, even if physical output is uncommissioned. |
+| `sensor.lightesota_control_status` | Read-only `lasers_armed` attribute, authority, generation, Stop/blackout/run state; available while the API is reachable, even if physical output is uncommissioned. |
 
 The API state is **commanded state, not observed physical output**. Connection,
 authorization, timeout or malformed-state errors mark the client unavailable;
 HA does not keep reporting available lamps from stale data. Preview,
 uncommissioned and released output also make light entities unavailable.
 Disconnection never guarantees a physical stop. HA restarting does not replay
-saved On states; reconnect only fetches state and never resends failed commands.
+saved On states or the arm button timestamp; reconnect only fetches state and never resends failed commands.
 
 Every mutation uses the current server generation. HTTP409 refreshes state and
 reports a stale-action error without retrying the mutation. The client captures
@@ -68,12 +69,18 @@ Spotify/Sonos capture. Sensitivity is a wash setting; laser sensitivity is the
 physical **S5** menu at addresses **031/041**, with no DMX sensitivity channel.
 Only W4's microphone behavior was historically verified physically. The new
 software has not physically validated W1–W4 or either laser. Shared-clock finite
-shows are staged and started in Lightesota; they do not arm lasers.
+shows are staged and started in Lightesota; they do not arm lasers. Laser Starts
+are rejected while muted or released in the shared server path. Unmute clears
+laser intent; fresh operator arm and Start are required. Wash mute/resume is retained.
+These are software permissions, not a hardware interlock.
 
 ## Existing entity IDs and dashboard migration
 
 New unique IDs are `lightesota_w1`…`lightesota_w4`, `lightesota_l1`,
-`lightesota_l2`. They do **not** adopt legacy pyartnet registry entries. The names
+`lightesota_l2`. The new arm button uses unique ID `lightesota_laser_arm`;
+Disarm uses `lightesota_lasers_off`, and status remains `lightesota_control_status`.
+The never-deployed candidate arm switch/platform has been removed; this change
+performs no live HA registry operation. They do **not** adopt legacy pyartnet registry entries. The names
 suggest the historical entity IDs, but HA may append `_2` on collision.
 
 During the approved isolated maintenance window:
@@ -104,12 +111,13 @@ During the approved isolated maintenance window:
    IDs if dashboards already reference them. Replace manual-takeover action with
    the new button. Do not leave a delayed legacy script or helper listener capable
    of calling the old sender. Legacy pinspot/haze actions are excluded, not mapped.
-5. Replace legacy laser enable helpers with the explicit operator arm switch and
+5. Replace legacy laser enable helpers with the explicit operator arm button and
    map only approved presets to the new effect names. A generic saved HA scene
    cannot arm. Unknown legacy preset names must be mapped manually; the old 415
    menu entries are not silently replicated. Pan remains a compact number control.
 6. Check the actual assigned IDs in the package/dashboard, including sensitivity,
-   Stop and arm. Run a **genuine isolated HA** config/lifecycle/registry and native
+   Stop, Disarm and Arm. The guarded-duo package reads the status sensor
+   `lasers_armed` attribute; it never presses Arm. Run a **genuine isolated HA** config/lifecycle/registry and native
    desktop/mobile light/dark UI acceptance with fake outputs before live rollout.
 
 ## Machine API
@@ -146,7 +154,6 @@ action. Safe Stop is accepted independently of stale generation on the server.
 From the repository root:
 
 ```bash
-python3 -m venv ../.ha-test-venv
 ../.ha-test-venv/bin/python -m unittest discover -s integrations/home_assistant/tests -v
 ../.ha-test-venv/bin/python -m compileall -q integrations/home_assistant/custom_components/lightesota
 ```
@@ -156,8 +163,11 @@ client/parser/entity methods, errors/offline state, generation queues, native
 multi-target context continuation, Stop invalidation, role gates, mode mapping and
 selected-fixture commands. They create no sockets or physical output.
 
-The available offline Python environment has **no Home Assistant, voluptuous or
-PyYAML package**. Thus this new component's native HA startup/schema/registry/UI
-acceptance is pending, not inferred from doubles. Historical genuine HA
-2026.11.0/frontend20261028.4 acceptance concerned the previous simple pyartnet
-bundle; it is not acceptance of this REST component or coordinated shows.
+Genuine isolated Home Assistant 2026.11.0 / Python 3.14.7 acceptance also exercises
+native setup, schemas, registry, service dispatch, script contexts, saved-scene
+reproduction and restart with an in-memory backend session. Native HA does not
+press the arm button during `scene.turn_on` or `scene.apply`. The known HA/aiohttp
+Application-subclass deprecation remains a separate diagnostic failure; it is not
+suppressed or counted as a functional pass. See the dated
+[change log](../../docs/lighting-integration-changelog.md) for final checks.
+No live HA, TLS, devices or physical commissioning are established by these tests.

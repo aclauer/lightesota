@@ -6,7 +6,7 @@ export class CommandError extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
 }
 const TYPES = new Set([
-  "setPattern", "setParams", "setMaster", "setBlackout", "setSpeed", "setCrossfade", "setBpm", "tap", "resync", "nudge", "setOverride", "clearOverrides", "setSolo", "armLasers", "setLaser", "setLaserLook", "followPatternLasers", "lasersOff", "setReleased", "recallScene", "playPlaylist", "stopPlaylist", "playlistNext", "playlistPrev", "testFixture", "setFollowMicBpm", "setSleep", "stopLighting", "takeManualControl", "setWash", "releaseWashes", "quickLook", "startCoordinatedShow",
+  "setPattern", "setParams", "setMaster", "setBlackout", "setSpeed", "setCrossfade", "setBpm", "tap", "resync", "nudge", "setOverride", "clearOverrides", "setSolo", "armLasers", "setLaser", "setLaserLook", "followPatternLasers", "lasersOff", "setReleased", "recallScene", "playPlaylist", "stopPlaylist", "playlistNext", "playlistPrev", "testFixture", "setFollowMicBpm", "setSleep", "stopLighting", "takeManualControl", "setWash", "releaseWashes", "quickLook", "startCoordinatedShow", "setHaze", "hazeOff",
 ]);
 export const isControlCommand = (v: unknown): boolean => !!v && typeof v === "object" && TYPES.has((v as {type:string}).type);
 function boolean(v: unknown, label: string): boolean { if (typeof v !== "boolean") throw new CommandError(`${label} must be boolean`); return v; }
@@ -18,11 +18,11 @@ export function dispatchControl(ctx: AppContext, raw: unknown, actor: {role: Rol
   if (!isControlCommand(msg)) throw new CommandError("Unknown control command");
   if (!roleAllows(actor.role, requiredRole(msg))) throw new CommandError("Not allowed for this role", 403);
   const show = ctx.show;
-  const safeStop = msg.type === "stopLighting" || msg.type === "lasersOff" || (msg.type === "armLasers" && msg.armed === false) || (msg.type === "setBlackout" && msg.blackout === true) || (msg.type === "setReleased" && msg.released === true);
+  const safeStop = msg.type === "stopLighting" || msg.type === "lasersOff" || msg.type === "hazeOff" || (msg.type === "setHaze" && msg.armed === false) || (msg.type === "armLasers" && msg.armed === false) || (msg.type === "setBlackout" && msg.blackout === true) || (msg.type === "setReleased" && msg.released === true);
   if (!safeStop && generation !== show.state.generation) throw new CommandError("Stale control generation; refresh state and deliberately retry", 409);
   const ordinary = (id: string) => {
     const f = ctx.rigFile.get().fixtures.find((f) => f.id === id && f.enabled);
-    if (!f || findProfile(f.profileId, ctx.rigFile.get().customProfiles)?.kind === "laser") throw new CommandError("Override/test must target an enabled ordinary fixture");
+    if (!f || ["laser", "haze"].includes(findProfile(f.profileId, ctx.rigFile.get().customProfiles)?.kind ?? "")) throw new CommandError("Override/test must target an enabled ordinary fixture");
   };
   switch (msg.type) {
     case "stopLighting": show.stopLighting(); return;
@@ -64,6 +64,11 @@ export function dispatchControl(ctx: AppContext, raw: unknown, actor: {role: Rol
     case "setLaserLook": show.setLaserLook(msg.lookId === null ? null : textValue(msg.lookId, "lookId")); return;
     case "followPatternLasers": show.followPatternLasers(textValue(msg.patternId, "patternId"), finite(msg.revision, 0, Number.MAX_SAFE_INTEGER, "revision", true)); return;
     case "lasersOff": show.lasersOff(actor.name); return;
+    case "setHaze": {
+      const { type: _type, generation: _generation, reqId: _reqId, ...patch } = msg as typeof msg & { reqId?: string };
+      show.setHaze(patch, actor.name); return;
+    }
+    case "hazeOff": show.hazeOff(actor.name); return;
     case "setReleased": show.setReleased(boolean(msg.released, "released")); return;
     case "recallScene":
       if (msg.crossfadeMs !== undefined) finite(msg.crossfadeMs, 0, 20000, "crossfade");

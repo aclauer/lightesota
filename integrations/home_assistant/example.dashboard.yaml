@@ -8,6 +8,7 @@ cards:
   - type: entities
     entities:
       - sensor.lightesota_control_status
+      - button.lightesota_all_lasers_off_disarm
       - button.lightesota_stop_lighting_all_off
       - button.lightesota_take_manual_control
       - light.office_dmx_w1
@@ -32,7 +33,7 @@ cards:
   # - type: entities
   #   title: Operator lasers · physical S5 at 031 / 041
   #   entities:
-  #     - switch.lightesota_operator_laser_arm
+  #     - button.lightesota_operator_laser_arm
   #     - light.office_laser_1_preset
   #     - light.office_laser_2_preset
   #     - number.office_laser_1_pan

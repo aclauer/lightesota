@@ -35,7 +35,24 @@ On boot/restart/worker recovery/import, emitting state is not restored. Librarie
 remain available; an operator makes a fresh Start. Lasers start disarmed and Off.
 Disarm clears intents; Arm alone cannot emit an old or staged preset. Strong Stop
 cancels queued writers and requires fresh intent. Temporary Blackout is a separate
-mute; its release cannot restore a guest's laser layer.
+wash mute. Laser Starts are refused while muted/released, and either edge clears
+laser/haze intent; a fresh operator arm and Start is required after unmute.
+
+Haze has a separate immutable process gate: `LIGHTESOTA_HAZE_COMMISSIONED=1` is
+required in addition to whole-output commissioning, and cannot override preview.
+It is **unset/false for this integration**. The retained card/profile/preview and
+timed runs are future capability; default/migrated haze fixtures stay disabled,
+and saved enabled fixtures remain blocked. Existing protected ranges and user
+fixtures/layout are retained. Only the built-in 2CH Haze 4D profile at 51 is allowed;
+ordinary overrides, patterns, identification flashes and custom profiles cannot
+drive it. Neither UI, import nor API can commission a process.
+
+Future haze commissioning requires separate building approval for detectors and
+ventilation, attended physical testing, explicit review of protected 51–52 ranges
+and fixture enablement, and only then a deliberately configured process restart.
+The flag never clears protected ranges. Stop, global manual takeover, release,
+disarm, mute and restart cancel haze; unmute never resumes it. Haze installation
+and physical tests remain pending and are outside the single-sender cutover below.
 
 ## Later operator sequence (not executed)
 
@@ -96,7 +113,7 @@ mute; its release cannot restore a guest's laser layer.
 | W1 / W2 | 101–112 / 113–124 | Side A |
 | W3 / W4 | 125–136 / 137–148 | Side B |
 | Laser1 / Laser2 | 31–40 / 41–50 | Preset-only, explicit operator arm |
-| Hazer | 51–52 | Installed/commissioned gate remains false; zero output |
+| Hazer | 51–52 | Separate process commissioning gate false; 51–52 held zero |
 | Pinspots | 29 / 30 | Disabled/excluded from this work |
 
 The wash 12CH order is dimmer,R,G,B,A,W,UV,strobe,macro,program,sensitivity,
@@ -121,7 +138,7 @@ user libraries are preserved and should not be deleted to obtain a dark boot.
 After `npm run build`, from the repository root:
 
 ```bash
-env LIGHTESOTA_PREVIEW=1 LIGHTESOTA_LOCALHOST_ADMIN=0 LIGHTESOTA_ADMIN_TOKEN="${LIGHTESOTA_QA_TOKEN:?set a disposable preview token}" HOST=127.0.0.1 LIGHTESOTA_DATA=../qa-data node server/dist/server/src/index.js
+env LIGHTESOTA_PREVIEW=1 LIGHTESOTA_OUTPUT_COMMISSIONED=0 LIGHTESOTA_HAZE_COMMISSIONED=0 LIGHTESOTA_LOCALHOST_ADMIN=0 LIGHTESOTA_ADMIN_TOKEN="${LIGHTESOTA_QA_TOKEN:?set a disposable preview token}" HOST=127.0.0.1 LIGHTESOTA_DATA=../qa-data node server/dist/server/src/index.js
 ```
 
 This invokes the built server directly and does **not** read `.env`. The process

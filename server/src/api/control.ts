@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import type { AppContext } from "./context.js";
-import { OUTPUT_VETO, PREVIEW } from "../output/policy.js";
+import { OUTPUT_VETO, PREVIEW, HAZE_VETO, HAZE_DISABLED_REASON } from "../output/policy.js";
 import { CommandError, dispatchControl } from "./commands.js";
 import { defaultLaserState, laserBytes, laserFixtures } from "../../../shared/src/index.js";
 
@@ -37,6 +37,7 @@ export function controlState(ctx: AppContext) {
       const emitting = admitted && laserBytes(requested, s.lasers.armed, s.blackout).some((byte) => byte !== 0);
       return [f.id, { ...requested, requestedMode: requested.mode, mode: emitting ? requested.mode : "off" }];
     })) }, blackout: s.blackout,
+    haze: { ...s.haze, commissioned: !HAZE_VETO, disabledReason: HAZE_DISABLED_REASON },
     master: s.master, coordinatedShow: s.coordinatedShow,
     rig: ctx.rigFile.get(),
     available: !OUTPUT_VETO && !s.released && enabled && !failed,

@@ -74,8 +74,9 @@ script:
     mode: single
     sequence:
       - condition: state
-        entity_id: switch.lightesota_operator_laser_arm
-        state: "on"
+        entity_id: sensor.lightesota_control_status
+        attribute: lasers_armed
+        state: true
       - action: light.turn_on
         target:
           entity_id: light.office_laser_1_preset
