@@ -26,6 +26,8 @@ export interface CompiledPattern {
   usesBeat: boolean;
   init?: (ctx: RenderCtx) => void;
   render: (ctx: RenderCtx) => void;
+  /** Run a pattern function inside the vm with a hard timeout (protects against infinite loops). */
+  invoke: (fn: (ctx: RenderCtx) => void, ctx: RenderCtx, timeoutMs: number) => void;
 }
 
 export interface RenderCtx {
@@ -110,7 +112,20 @@ export function compilePattern(source: string, opts: CompileOptions = {}): Compi
   if (typeof def.render !== "function") throw new Error("Pattern must define render(ctx)");
   const params = validateSchema(def.params);
   const srcForBeat = source;
+  const invokeScript = new vm.Script("__invoke_fn(__invoke_arg)", { filename: "invoke.js" });
+  const ctxAny = context as Record<string, unknown>;
+  const invoke = (fn: (ctx: RenderCtx) => void, ctx: RenderCtx, timeoutMs: number) => {
+    ctxAny.__invoke_fn = fn;
+    ctxAny.__invoke_arg = ctx;
+    try {
+      invokeScript.runInContext(context, { timeout: timeoutMs });
+    } finally {
+      ctxAny.__invoke_fn = undefined;
+      ctxAny.__invoke_arg = undefined;
+    }
+  };
   return {
+    invoke,
     name: typeof def.name === "string" && def.name.trim() ? def.name.trim().slice(0, 60) : "Untitled",
     description: typeof def.description === "string" ? def.description.slice(0, 400) : "",
     tags: Array.isArray(def.tags) ? def.tags.filter((t) => typeof t === "string").map((t) => String(t).toLowerCase().slice(0, 24)).slice(0, 10) : [],
@@ -147,6 +162,10 @@ export class PatternInstance {
   t = 0;
   params: ParamValues;
   error: string | null = null;
+  /** Set after a render timeout; the pattern stays dark until it is edited and reloaded. */
+  disabled = false;
+  /** Per-frame budget for render(). */
+  timeoutMs = 100;
 
   constructor(public readonly compiled: CompiledPattern, public fixtures: SandboxFixture[], params: ParamValues | undefined, seed: number, private log: (...a: unknown[]) => void = () => {}) {
     this.params = sanitizeParams(compiled.params, params);
@@ -180,7 +199,7 @@ export class PatternInstance {
     };
     this.ctx = ctx;
     if (compiled.init) {
-      try { compiled.init(ctx); } catch (e) { this.error = `init(): ${(e as Error).message}`; }
+      try { compiled.invoke(compiled.init, ctx, 500); } catch (e) { this.error = `init(): ${(e as Error).message}`; }
     }
   }
 
@@ -209,11 +228,16 @@ export class PatternInstance {
     c.onBeat = bi !== this.lastBeatInt;
     this.lastBeatInt = bi;
     this.out.fill(0);
+    if (this.disabled) return;
     try {
-      this.compiled.render(c);
+      this.compiled.invoke(this.compiled.render, c, this.timeoutMs);
       this.error = null;
     } catch (e) {
-      this.error = `render(): ${(e as Error).message}`;
+      const msg = (e as Error).message;
+      if (/timed out/i.test(msg)) {
+        this.disabled = true;
+        this.error = `render() took longer than ${this.timeoutMs} ms (infinite loop?). Pattern disabled until edited.`;
+      } else this.error = `render(): ${msg}`;
     }
     // Sanitize NaNs so a bad pattern cannot poison the output.
     const out = this.out;
@@ -230,6 +254,7 @@ export function testPattern(source: string, fixtures?: SandboxFixture[]) {
   const compiled = compilePattern(source, { timeoutMs: 1000, log: (...a) => { if (logs.length < 20) logs.push(a.map(String).join(" ")); } });
   const fx = fixtures ?? syntheticFixtures();
   const inst = new PatternInstance(compiled, fx, defaultParams(compiled.params), 1, () => {});
+  inst.timeoutMs = 250;
   if (inst.error) throw new Error(inst.error);
   const t0 = performance.now();
   for (let i = 0; i < 30; i++) {
