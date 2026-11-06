@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { Role, Settings } from "../../../shared/src/index.js";
 import { config } from "../config.js";
@@ -18,21 +18,33 @@ export class Auth {
   regenerateAdmin() { this.file.update((d) => ({ ...d, adminToken: gen() })); return this.adminToken; }
 
   roleForToken(token: string | undefined, remoteAddress: string | undefined): Role {
-    if (token && token === this.adminToken) return "admin";
-    if (token && token === this.guestToken) {
+    if (token && equalToken(token, this.adminToken)) return "admin";
+    if (token && equalToken(token, this.guestToken)) {
       const p = this.getSettings().sharing.guestPermission;
       return p === "edit" ? "editor" : p === "control" ? "guest" : "viewer";
     }
-    if (config.localhostIsAdmin && isLoopback(remoteAddress)) return "admin";
     return "viewer";
+  }
+
+  /** Machine API never accepts query/cookie tokens or tokenless loopback privileges. */
+  roleForBearer(req: IncomingMessage): Role | null {
+    const header = req.headers.authorization;
+    const match = typeof header === "string" ? /^Bearer ([^\s]+)$/i.exec(header) : null;
+    if (!match || !(equalToken(match[1], this.adminToken) || equalToken(match[1], this.guestToken))) return null;
+    return this.roleForToken(match[1], undefined);
   }
 
   roleForRequest(req: IncomingMessage): Role {
     const cookies = parseCookies(req.headers.cookie);
-    const url = new URL(req.url ?? "/", "http://x");
-    const token = url.searchParams.get("t") ?? cookies["lt_token"];
-    return this.roleForToken(token ?? undefined, req.socket.remoteAddress);
+    // Share-link exchange remains browser-only; never treat loopback/proxy origin as admin.
+    const token = cookies["lt_token"];
+    return this.roleForToken(token, undefined);
   }
+}
+
+function equalToken(a: string, b: string): boolean {
+  const x = Buffer.from(a), y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
 }
 
 export function isLoopback(addr: string | undefined) {
@@ -46,7 +58,9 @@ export function parseCookies(header: string | undefined): Record<string, string>
   for (const part of header.split(";")) {
     const i = part.indexOf("=");
     if (i < 0) continue;
-    out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    const key = part.slice(0, i).trim();
+    if (["__proto__", "constructor", "prototype"].includes(key)) continue;
+    try { out[key] = decodeURIComponent(part.slice(i + 1).trim()); } catch { /* Malformed cookies grant no privileges. */ }
   }
   return out;
 }

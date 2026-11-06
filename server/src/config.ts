@@ -24,8 +24,8 @@ export const config = {
   builtinPatternsDir: path.join(REPO_ROOT, "patterns"),
   webDist: path.join(REPO_ROOT, "web", "dist"),
   adminTokenOverride: process.env.LIGHTESOTA_ADMIN_TOKEN,
-  /** Lower-case names of trusted localhost origins allowed admin without a token. */
-  localhostIsAdmin: (process.env.LIGHTESOTA_LOCALHOST_ADMIN ?? "1") !== "0",
+  /** Deprecated compatibility field; authentication never depends on source address. */
+  localhostIsAdmin: false, // Compatibility field: origin is never authentication, including proxies.
 };
 
 export function ensureDataDirs() {

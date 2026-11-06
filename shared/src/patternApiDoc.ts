@@ -77,8 +77,10 @@ fixtures (pinspots) only show brightness, so give them something meaningful.
 
 Lasers (optional). The room has dual-mirror lasers that only accept an operator-approved vocabulary, so a
 pattern cannot paint them like a wash. Instead it may export a \`lasers\` section, and the pattern is then
-tagged "laser"; switching to a pattern without one turns the lasers off. Lasers only emit while an admin
-has armed them, so a laser pattern is always safe to write and apply.
+tagged "laser"; switching patterns clears the previous pattern laser ownership and output. Lasers only emit while an admin
+has armed them AND explicitly selected Follow for the current loaded source revision.
+Applying a pattern, editing its source/parameters, Stop, disarm and manual takeover clear
+that authorization; Arm alone never restores it. These software limits do not establish optical safety.
 
   Form 1, a named look:      lasers: "beat-colors"      (ids: twin-green, red-green, tight, wide, waves,
                                                           breathe, scissors, beat-colors, beat-waves,

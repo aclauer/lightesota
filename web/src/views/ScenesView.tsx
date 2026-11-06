@@ -25,7 +25,7 @@ export function ScenesView() {
       <button className={`scene-tile ${s.id === show.activeSceneId ? "active" : ""}`} disabled={!control} onClick={() => send({ type: "recallScene", sceneId: s.id })} title={`Recall "${s.name}"`}>
         <div className="swatches">{(s.swatch.length ? s.swatch : ["#333"]).map((c, i) => <i key={i} style={{ background: c }} />)}</div>
         <div className="nm">{s.name}</div>
-        <div className="meta"><span>{p?.name ?? (s.patternId ? "missing pattern" : "blackout")}</span><span>{s.bpm ? `${Math.round(s.bpm)} bpm` : ""}</span></div>
+        <div className="meta"><span>{p?.name ?? (s.patternId ? "missing pattern" : "Manual scene")}</span><span>{s.bpm ? `${Math.round(s.bpm)} bpm` : ""}</span></div>
         {s.favorite && <Star className="star" style={{ width: 14, height: 14 }} fill="currentColor" />}
         {s.hotkey && <span className="kbd" style={{ position: "absolute", top: 6, left: 6 }}>{s.hotkey}</span>}
         {editor && <span className="btn ghost icon sm" style={{ position: "absolute", bottom: 4, right: 4 }} onClick={(e) => { e.stopPropagation(); setEdit(s); }} role="button" aria-label="Edit scene"><Pencil /></span>}
@@ -36,7 +36,7 @@ export function ScenesView() {
   return (
     <div className="stack">
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <div><h2 style={{ fontSize: 18 }}>Scenes</h2><p className="hint">A scene is a saved look: pattern, parameters, BPM and master. Press <span className="kbd">1</span>–<span className="kbd">9</span> to recall hotkey scenes.</p></div>
+        <div><h2 style={{ fontSize: 18 }}>Scenes</h2><p className="hint">A scene saves the pattern, parameters, wash modes, BPM and master. Laser arming is never saved. Press <span className="kbd">1</span>–<span className="kbd">9</span> to recall hotkey scenes.</p></div>
         {control && <button className="btn primary" onClick={() => setSaveOpen(true)}><Save /> Save current look</button>}
       </div>
       {scenes.length === 0 && <div className="empty">No scenes yet. Set up a look on the Live tab and save it.</div>}

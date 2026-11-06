@@ -60,11 +60,12 @@ export class Library extends EventEmitter<LibraryEvents> {
   getPattern(id: string): Pattern | undefined { return this.patterns.get(id); }
 
   /** Validate and save. Built-ins are copied to a user pattern on first edit. */
-  savePattern(input: { id?: string; name?: string; source: string }): Pattern {
-    const test = testPattern(input.source); // throws on error
+  savePattern(input: { id?: string; name?: string; source: string }, preserveId = false, prepared?: ReturnType<typeof testPattern>): Pattern {
+    const test = prepared ?? testPattern(input.source); // imports prepare every record before saving any
     let id = input.id;
     const existing = id ? this.patterns.get(id) : undefined;
-    if (!id || !existing || existing.builtin) {
+    if (preserveId && (!id || !/^[\w-]+$/.test(id) || id.startsWith("builtin-"))) throw new Error("Invalid imported pattern id");
+    if (!id || (!preserveId && (!existing || existing.builtin))) {
       const base = slug(test.compiled.name || input.name || "pattern");
       id = `${base}-${nanoid(6)}`;
     }

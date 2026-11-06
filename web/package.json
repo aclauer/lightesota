@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --import tsx --test tests/*.test.ts",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"

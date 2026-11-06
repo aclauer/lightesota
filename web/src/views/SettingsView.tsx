@@ -15,7 +15,6 @@ export function SettingsView() {
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   const toast = useStore((s) => s.toast);
-  const show = useStore((s) => s.show)!;
   const hueLights = useStore((s) => s.hueLights);
   const [share, setShare] = useState(false);
   const admin = can("admin");
@@ -29,6 +28,8 @@ export function SettingsView() {
       const res = await fetch("/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
       toast("success", "Imported");
+      // Reconnect for the complete imported rig/settings snapshot; no emitting state is restored.
+      location.reload();
     } catch (e) { toast("error", `Import failed: ${(e as Error).message}`); }
   };
 
@@ -77,18 +78,10 @@ export function SettingsView() {
               </div>
               {status?.artnet.error && <div className="err">{status.artnet.error}</div>}
               <div className="divider" />
-              <label className="row"><button className={`switch ${local.artnet.upstream.enabled ? "on" : ""}`} role="switch" aria-checked={local.artnet.upstream.enabled} onClick={() => save({ artnet: { ...local.artnet, upstream: { ...local.artnet.upstream, enabled: !local.artnet.upstream.enabled } } })} /> Merge an upstream Art-Net sender (Home Assistant)</label>
-              <p className="hint">Point Home Assistant's Art-Net host at this server instead of the ODE. Its frame is forwarded for every channel this app does not own (lasers, hazer), so the ODE still sees a single sender.</p>
-              {local.artnet.upstream.enabled && (
-                <div className="row nowrap">
-                  <label className="field" style={{ width: 110 }}><span>Listen port</span><input className="input tabular" type="number" value={local.artnet.upstream.listenPort} onChange={(e) => setLocal({ ...local, artnet: { ...local.artnet, upstream: { ...local.artnet.upstream, listenPort: Number(e.target.value) } } })} onBlur={() => save({ artnet: local.artnet })} /></label>
-                  <label className="field" style={{ flex: 1 }}><span>Only accept from IP (optional)</span><input className="input mono" placeholder="10.10.0.192" value={local.artnet.upstream.allowFrom} onChange={(e) => setLocal({ ...local, artnet: { ...local.artnet, upstream: { ...local.artnet.upstream, allowFrom: e.target.value } } })} onBlur={() => save({ artnet: local.artnet })} /></label>
-                </div>
-              )}
-              {local.artnet.upstream.enabled && <div className="hint">{status?.upstream.lastFrameAt && Date.now() - status.upstream.lastFrameAt < 5000 ? `Receiving from ${status.upstream.from} (${status.upstream.frames} frames)` : "No upstream frames in the last 5 s; unowned channels are held at 0."}</div>}
-              <div className="divider" />
-              <label className="row"><button className={`switch ${show.released ? "on" : ""}`} role="switch" aria-checked={show.released} onClick={() => send({ type: "setReleased", released: !show.released })} /> Release output to Home Assistant</label>
-              <p className="hint">When released, this app stops driving fixtures: with upstream merge on it forwards HA's frame untouched, otherwise it stops transmitting so HA can send to the ODE directly.</p>
+              <h4>Output authority</h4>
+              <p className="hint">Home Assistant connects through the authenticated Lightesota API. Lightesota owns final DMX output; upstream Art-Net merging is disabled.</p>
+              <p className="hint">Until the legacy sender is retired and the installation is commissioned, All Off controls Lightesota only. It cannot guarantee a dark room while another sender is active.</p>
+              <p className="hint">{status?.control?.preview ? "Preview process: Art-Net, Hue and upstream output are permanently vetoed, regardless of these settings." : status?.control?.commissioned ? "Output is commissioned for this process. Physical fixture state remains unverified." : "Output is not commissioned. An operator must complete the documented sender migration before enabling physical output."}</p>
             </div>
           </div>
         )}
@@ -166,9 +159,9 @@ export function SettingsView() {
         <div className="card">
           <h3>Shortcuts</h3>
           <div className="stack" style={{ fontSize: 13 }}>
-            <div className="row"><span className="kbd">space</span> blackout</div>
+            <div className="row"><span className="kbd">space</span> temporary blackout</div>
             <div className="row"><span className="kbd">T</span> tap tempo <span className="kbd">R</span> resync beat <span className="kbd">[</span> <span className="kbd">]</span> nudge</div>
-            <div className="row"><span className="kbd">1</span>–<span className="kbd">9</span> recall scenes <span className="kbd">0</span> dark</div>
+            <div className="row"><span className="kbd">1</span>–<span className="kbd">9</span> recall scenes <span className="kbd">0</span> Stop lighting / All Off</div>
             <div className="row"><span className="kbd">⌘S</span> save pattern in the editor</div>
           </div>
         </div>

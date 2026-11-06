@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useEffect, useState as useStateReact } from "react";
 import { Code2, Flashlight, Mic, MicOff, Moon, RotateCcw, Save, X } from "lucide-react";
-import { findProfile, engineFixtures, isLaserProfile, isHazeProfile, type FixtureOverride } from "@lightesota/shared";
+import { COORDINATED_SHOWS, findProfile, engineFixtures, isLaserProfile, isHazeProfile, type FixtureOverride } from "@lightesota/shared";
 import { LasersCard } from "../components/LasersCard";
+import { WashesCard } from "../components/WashesCard";
 import { HazeCard } from "../components/HazeCard";
 import { useStore } from "../state/store";
 import { Stage } from "../components/Stage";
@@ -31,13 +32,16 @@ export function LiveView() {
       <div className="stage-wrap">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div className="row">
-            <h2 style={{ fontSize: 18 }}>{pattern ? pattern.name : "No pattern"}</h2>
+            <h2 style={{ fontSize: 18 }}>{show.stopped ? "Lighting stopped" : COORDINATED_SHOWS.find((s) => s.id === show.coordinatedShow?.id)?.name ?? pattern?.name ?? "Manual lighting"}</h2>
             {activeScene && <span className="pill accent">Scene: {activeScene.name}</span>}
             {show.playlist && <span className="pill ok">Playlist running</span>}
             {status?.engine.patternError && <span className="pill danger" title={status.engine.patternError}>pattern error</span>}
-            {show.released && <span className="pill warn">Released to Home Assistant</span>}
+            {show.released && <span className="pill warn">Lightesota output released</span>}
+            {show.stopped && <span className="pill">Stopped · choose a look to start</span>}
+            {status?.control?.preview && <span className="pill warn">Preview · outputs vetoed</span>}
           </div>
           <div className="row">
+            {control && <button className="btn sm" title="Hold the current wash look, cancel automation, and disarm lasers" onClick={() => send({ type: "takeManualControl" })}>Take manual control</button>}
             {control && <button className="btn sm" onClick={() => setSaveOpen(true)}><Save /> Save scene</button>}
             {pattern && can("editor") && <button className="btn sm ghost" onClick={() => openEditor(pattern.id)}><Code2 /> Edit</button>}
           </div>
@@ -50,6 +54,7 @@ export function LiveView() {
       </div>
       <div className="side">
         {selected ? <FixtureInspector id={selected} onClose={() => selectFixture(null)} /> : null}
+        <WashesCard />
         <div className="card">
           <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>Parameters</h3>
@@ -62,7 +67,7 @@ export function LiveView() {
           ) : <p className="hint">Pick a pattern from the Patterns tab, or recall a scene.</p>}
         </div>
         <div className="card">
-          <h3>Show</h3>
+          <h3>Pattern playback</h3>
           <div className="param">
             <span className="lbl">Crossfade</span><span className="val">{(show.crossfadeMs / 1000).toFixed(1)} s</span>
             <input className="ctl" type="range" min={0} max={8000} step={100} value={show.crossfadeMs} disabled={!control} onChange={(e) => send({ type: "setCrossfade", crossfadeMs: Number(e.target.value) })} aria-label="Crossfade" />
@@ -169,26 +174,27 @@ function SoundCard() {
   const stopMic = useStore((s) => s.stopMic);
   const send = useStore((s) => s.send);
   const can = useStore((s) => s.can);
-  const myName = useStore((s) => s.myName);
-  const control = can("guest");
+  const connected = useStore((s) => s.connected);
+  const control = can("guest") && connected;
   const remote = show.audio.active && !mic.running;
   const level = mic.running ? mic.level : show.audio.level;
   return (
     <div className="card">
       <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
-        <h3 style={{ margin: 0 }}>Sound</h3>
-        {show.audio.active && <span className="pill ok">{mic.running ? "your mic" : `via ${show.audio.source ?? "someone"}`}</span>}
+        <h3 style={{ margin: 0 }}>Music source</h3>
+        {show.audio.active && <span className={`pill ${level > 0.01 ? "ok" : ""}`}>{mic.running ? "your browser mic" : `via ${show.audio.source ?? "another browser"}`}</span>}
       </div>
       <div className="stack">
+        <span className={`pill ${show.audio.active ? "ok" : ""}`} style={{ justifySelf: "start" }}>{show.audio.active ? "Browser microphone" : "Shared BPM clock · audio fallback"}</span>
         <div className="progress" style={{ height: 8 }}><i style={{ width: `${Math.round(level * 100)}%`, transition: "width 80ms linear" }} /></div>
         <div className="row" style={{ justifyContent: "space-between" }}>
           {mic.running ? <button className="btn sm" onClick={stopMic}><MicOff /> Stop listening</button>
             : <button className="btn sm" disabled={!control || !mic.supported || remote} onClick={() => void startMic()} title={remote ? `${show.audio.source} is already streaming audio` : ""}><Mic /> {remote ? "Mic in use" : "Use this device's mic"}</button>}
-          <span className="hint tabular">{show.audio.bpm ? `~${show.audio.bpm} BPM detected` : mic.running ? "listening…" : ""}</span>
+          <span className="hint tabular">{show.audio.active && level > 0.01 && show.audio.bpm ? `~${show.audio.bpm} BPM detected` : (mic.running || show.audio.active) ? level > 0.01 ? "Listening · no tempo yet" : "Quiet · no detected tempo" : "Shared BPM clock"}</span>
         </div>
         <label className="row"><button className={`switch ${show.audio.followBpm ? "on" : ""}`} role="switch" aria-checked={show.audio.followBpm} disabled={!control} onClick={() => send({ type: "setFollowMicBpm", on: !show.audio.followBpm })} /> <span style={{ fontSize: 12.5 }}>Follow the detected tempo</span></label>
         {mic.error && <div className="err">{mic.error}</div>}
-        {!mic.running && !show.audio.active && <p className="hint">Patterns tagged <span className="pill">audio</span> react to the music through a microphone. Put the device near the speakers. {myName ? "" : ""}</p>}
+        <p className="hint">Browser microphone feeds patterns tagged <span className="pill">audio</span>. Sound Reactive falls back to the shared BPM clock when audio is unavailable. Fixture Music modes use microphones inside the lights, independently.</p>
       </div>
     </div>
   );
@@ -213,7 +219,7 @@ export function SaveSceneModal({ onClose }: { onClose: () => void }) {
   };
   return (
     <Modal title="Save scene" onClose={onClose}>
-      <p className="muted">Saves the current pattern, its parameters, BPM{pattern?.usesBeat ? "" : " (not used by this pattern)"}, master level and fixture overrides.</p>
+      <p className="muted">Saves the current pattern, its parameters, BPM{pattern?.usesBeat ? "" : " (not used by this pattern)"}, master level, wash modes and fixture overrides. Laser arming is never saved.</p>
       <label className="field"><span>Name</span><input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void save()} /></label>
       {active && (
         <label className="row"><button className={`switch ${overwrite ? "on" : ""}`} role="switch" aria-checked={overwrite} onClick={() => setOverwrite(!overwrite)} /> <span>Update the current scene “{active.name}” instead of making a new one</span></label>
@@ -238,6 +244,12 @@ function FixtureInspector({ id, onClose }: { id: string; onClose: () => void }) 
   const ov: FixtureOverride | undefined = show.overrides[f.id];
   const soloed = show.solo.includes(f.id);
   const isColor = profile?.colorModel !== "dimmer";
+  if (f.profileId === "chauvet-slimpar-pro-h-12ch") {
+    return <div className="card fixture-inspector">
+      <div className="row" style={{ justifyContent: "space-between" }}><h2 style={{ margin: 0 }}>{f.name}</h2><button className="btn ghost icon sm" onClick={onClose} aria-label="Close fixture inspector"><X /></button></div>
+      <p className="hint">{profile?.name} · DMX {f.address}. Selected in Washes below. Modes and manual changes hold until released to the pattern.</p>
+    </div>;
+  }
   if (isLaserProfile(profile) || isHazeProfile(profile)) {
     return (
       <div className="card fixture-inspector">

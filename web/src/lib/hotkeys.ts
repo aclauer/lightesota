@@ -20,7 +20,7 @@ export function useHotkeys() {
         const scene = s.scenes.find((sc) => sc.hotkey === n) ?? s.scenes[n - 1];
         if (scene) s.send({ type: "recallScene", sceneId: scene.id });
       }
-      else if (e.key === "0") s.send({ type: "setPattern", patternId: null });
+      else if (e.key === "0") s.send({ type: "stopLighting" });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

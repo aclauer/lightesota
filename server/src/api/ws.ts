@@ -8,7 +8,8 @@ import { deepMerge } from "../store.js";
 import { parseCookies } from "./auth.js";
 import { DEVICE_COOKIE, newDeviceId } from "./devices.js";
 import type { AppContext } from "./context.js";
-import { validateRig } from "./validate.js";
+import { validateRig, validateSettings, validateScene, validatePlaylist, validateAudio } from "./validate.js";
+import { dispatchControl, isControlCommand } from "./commands.js";
 
 interface Client { ws: WebSocket; id: string; deviceId: string; role: Role; name: string; color: string; connectedAt: number; wantsDmx: boolean; alive: boolean; ip: string; openConv: string | null; listAll: boolean; }
 
@@ -141,7 +142,7 @@ export class WsHub {
 
   private onMessage(client: Client, raw: string) {
     let msg: ClientMessage;
-    try { msg = JSON.parse(raw) as ClientMessage; } catch { return; }
+    try { msg = JSON.parse(raw) as ClientMessage; if (!msg || typeof msg !== "object" || Array.isArray(msg)) return; } catch { return; }
     const reqId = "reqId" in msg ? msg.reqId : undefined;
     if (!roleAllows(client.role, requiredRole(msg))) {
       this.send(client, { type: "error", text: `Not allowed (${client.role} role)`, reqId });
@@ -157,6 +158,11 @@ export class WsHub {
 
   private handle(client: Client, msg: ClientMessage): unknown {
     const { show, library, ctx } = { show: this.ctx.show, library: this.ctx.library, ctx: this.ctx };
+    if (isControlCommand(msg)) {
+      dispatchControl(ctx, msg, client, (msg as ClientMessage & {generation?: number}).generation);
+      this.broadcast({ type: "show", show: show.state });
+      return { generation: show.state.generation };
+    }
     switch (msg.type) {
       case "ping": this.send(client, { type: "pong", t: msg.t, serverTime: Date.now() }); return;
       case "setName": {
@@ -167,33 +173,14 @@ export class WsHub {
         this.broadcastPresence();
         return;
       }
-      case "setPattern": show.setPattern(msg.patternId, msg.params, msg.crossfadeMs, false, client.name); return;
-      case "setParams": show.setParams(msg.params, msg.merge ?? true); return;
-      case "setMaster": show.setMaster(Number(msg.master)); return;
-      case "setBlackout": show.setBlackout(!!msg.blackout); return;
-      case "setSpeed": show.setSpeed(Number(msg.speed)); return;
-      case "setCrossfade": show.setCrossfade(Number(msg.crossfadeMs)); return;
-      case "setBpm": show.setBpm(Number(msg.bpm)); return;
-      case "tap": show.tap(); return;
-      case "resync": show.resync(); return;
-      case "nudge": show.nudge(Number(msg.ms)); return;
-      case "setOverride": show.setOverride(msg.fixtureId, msg.override); return;
-      case "clearOverrides": show.clearOverrides(); return;
-      case "setSolo": show.setSolo(msg.fixtureIds); return;
-      case "armLasers": show.armLasers(!!msg.armed, client.name || "admin"); return;
-      case "setLaser": show.setLaser(String(msg.fixtureId), (msg.state ?? {}) as Partial<LaserState>); return;
-      case "setLaserLook": show.setLaserLook(msg.lookId === null ? null : String(msg.lookId)); return;
-      case "lasersOff": show.lasersOff(client.name || "someone"); return;
       case "setHaze": show.setHaze({ armed: msg.armed, fan: msg.fan, output: msg.output, runSec: msg.runSec }, client.name || "admin"); return;
       case "hazeOff": show.hazeOff(client.name || "someone"); return;
-      case "setReleased": show.setReleased(!!msg.released); ctx.output.released = !!msg.released; return;
-      case "recallScene": show.recallScene(msg.sceneId, msg.crossfadeMs, client.name); return;
       case "saveScene": return show.captureScene(msg.name, msg.sceneId);
       case "updateScene": {
         const s = library.scenes.find((x) => x.id === msg.scene.id);
         if (!s) throw new Error("Scene not found");
         const { id: _id, ...patch } = msg.scene;
-        library.upsertScene({ ...s, ...patch, updatedAt: Date.now() });
+        library.upsertScene(validateScene({ ...s, ...patch, updatedAt: Date.now() }, ctx.rigFile.get()));
         return;
       }
       case "deleteScene": library.deleteScene(msg.sceneId); return;
@@ -203,14 +190,10 @@ export class WsHub {
         if (!pl.id) pl.id = nanoid(8);
         pl.updatedAt = Date.now();
         pl.createdAt ||= pl.updatedAt;
-        library.upsertPlaylist(pl);
+        library.upsertPlaylist(validatePlaylist(pl));
         return pl.id;
       }
       case "deletePlaylist": library.deletePlaylist(msg.playlistId); if (show.state.playlist?.playlistId === msg.playlistId) show.stopPlaylist(); return;
-      case "playPlaylist": show.playPlaylist(msg.playlistId, msg.stepIndex); return;
-      case "stopPlaylist": show.stopPlaylist(); return;
-      case "playlistNext": show.playlistNext(); return;
-      case "playlistPrev": show.playlistPrev(); return;
       case "getPattern": {
         const p = library.getPattern(msg.patternId);
         if (!p) throw new Error("Pattern not found");
@@ -235,15 +218,15 @@ export class WsHub {
       }
       case "setRig": {
         const rig = validateRig(msg.rig as Rig);
+        show.stopLighting();
         ctx.rigFile.set(rig);
         ctx.applyConfig();
         this.broadcast({ type: "rig", rig });
         return;
       }
       case "setSettings": {
-        const merged = deepMerge(ctx.settingsFile.get(), msg.settings);
-        merged.artnet.fps = Math.max(5, Math.min(60, Number(merged.artnet.fps) || 40));
-        merged.previewFps = Math.max(5, Math.min(40, Number(merged.previewFps) || 20));
+        const merged = validateSettings(deepMerge(ctx.settingsFile.get(), msg.settings));
+        show.stopLighting();
         ctx.settingsFile.set(merged);
         ctx.applyConfig();
         this.broadcastSettings(merged);
@@ -272,16 +255,11 @@ export class WsHub {
           .catch((e: Error) => this.send(client, { type: "error", text: `Hue: ${e.message}`, reqId: msg.reqId }));
         return;
       }
-      case "audio": show.setAudio(client.id, client.name, msg.frame); return;
-      case "setFollowMicBpm": show.setFollowMicBpm(!!msg.on); return;
-      case "setSleep": show.setSleep(msg.minutes === null ? null : Number(msg.minutes)); return;
-      case "testFixture": {
-        // Flash a single fixture white for a moment via a temporary override.
-        const secs = Math.min(10, Math.max(0.5, msg.seconds ?? 2));
-        show.setOverride(msg.fixtureId, { r: 1, g: 1, b: 1, w: 1, dim: 1, mix: 1 });
-        setTimeout(() => { if (show.state.overrides[msg.fixtureId]?.w === 1) show.setOverride(msg.fixtureId, null); }, secs * 1000);
-        return;
+      case "audio": {
+        if (msg.frame !== null && (msg as ClientMessage & {generation?: number}).generation !== show.state.generation) throw new Error("Stale control generation");
+        show.setAudio(client.id, client.name, msg.frame === null ? null : validateAudio(msg.frame)); return;
       }
+      default: throw new Error("Unknown message type");
     }
   }
 

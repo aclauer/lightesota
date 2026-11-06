@@ -1,0 +1,40 @@
+# Merge into the existing Office Lighting dashboard; this is a small native card.
+type: vertical-stack
+cards:
+  - type: markdown
+    content: >-
+      **Fixture microphones** react independently. **Shared BPM clock** shows run in
+      Lightesota. 25/255 is about 10%. State is commanded output, not device feedback.
+  - type: entities
+    entities:
+      - sensor.lightesota_control_status
+      - button.lightesota_stop_lighting_all_off
+      - button.lightesota_take_manual_control
+      - light.office_dmx_w1
+      - light.office_dmx_w2
+      - light.office_dmx_w3
+      - light.office_dmx_w4
+      - input_select.lightesota_wash_scope
+      - input_select.lightesota_music_palette
+      - script.lightesota_selected_music
+      - script.lightesota_warm_arrival
+      - script.lightesota_cyan_magenta
+      - script.lightesota_calm_blue
+  - type: entities
+    title: Advanced wash microphone sensitivity (11–255)
+    entities:
+      - number.office_dmx_w1_mic_sensitivity
+      - number.office_dmx_w2_mic_sensitivity
+      - number.office_dmx_w3_mic_sensitivity
+      - number.office_dmx_w4_mic_sensitivity
+  # Optional trained-operator section; omit until operator_token is configured.
+  # Visibility alone is not permission: the component checks the HA user's admin role.
+  # - type: entities
+  #   title: Operator lasers · physical S5 at 031 / 041
+  #   entities:
+  #     - switch.lightesota_operator_laser_arm
+  #     - light.office_laser_1_preset
+  #     - light.office_laser_2_preset
+  #     - number.office_laser_1_pan
+  #     - number.office_laser_2_pan
+  #     - script.lightesota_guarded_duo

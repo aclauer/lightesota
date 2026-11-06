@@ -30,8 +30,8 @@ export function defaultRig(): Rig {
     },
     fixtures: [
       wash(1, 101, 1.0, 1.0, ["left", "front"]),
-      wash(2, 113, 9.0, 1.0, ["right", "front"]),
-      wash(3, 125, 1.0, 7.0, ["left", "back"]),
+      wash(2, 113, 1.0, 7.0, ["left", "back"]),
+      wash(3, 125, 9.0, 1.0, ["right", "front"]),
       wash(4, 137, 9.0, 7.0, ["right", "back"]),
       spot(1, 29, 4.0, 4.0, ["left", "center"]),
       spot(2, 30, 6.0, 4.0, ["right", "center"]),
@@ -60,9 +60,16 @@ export function migrateRig(input: Rig): { rig: Rig; changed: boolean } {
     };
     changed = true;
   }
+  // Only unmistakable original metadata; saved positions and custom tags remain untouched.
+  rig = { ...rig, fixtures: rig.fixtures.map((f) => {
+    const old = f.id === "w2" && f.address === 113 ? ["wash", "right", "front"] : f.id === "w3" && f.address === 125 ? ["wash", "left", "back"] : null;
+    if (f.profileId !== "chauvet-slimpar-pro-h-12ch" || !old || JSON.stringify(f.tags) !== JSON.stringify(old)) return f;
+    changed = true;
+    return { ...f, tags: f.tags.map((tag) => tag === "left" || tag === "right" ? (f.id === "w2" ? "left" : "right") : tag) };
+  }) };
   const hasLaser = rig.fixtures.some((f) => f.profileId === "chauvet-scorpion-dual-rgb-ils-10ch");
   const laserRanges = rig.protectedRanges.filter((r) => /laser/i.test(r.reason) && r.to - r.from === 9);
-  if (hasLaser || laserRanges.length === 0) return { rig, changed };
+  if (hasLaser || laserRanges.length === 0) return { rig, changed: changed };
   const def = defaultRig();
   const fixtures = [...rig.fixtures];
   for (const [i, r] of laserRanges.entries()) {

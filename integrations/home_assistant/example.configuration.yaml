@@ -1,0 +1,14 @@
+# Copy the component directory to /config/custom_components/lightesota/.
+# Store actual credentials only in your own /config/secrets.yaml.
+lightesota:
+  url: !secret lightesota_url
+  token: !secret lightesota_control_token
+  # Optional: enables guarded operator controls. Never use this in generic rest_command.
+  # operator_token: !secret lightesota_operator_token
+  poll_interval: 2
+  wash_fixtures: [w1, w2, w3, w4]
+  laser_fixtures: [l1, l2]
+
+# If packages are not already enabled, merge this into your existing homeassistant key:
+# homeassistant:
+#   packages: !include_dir_named packages

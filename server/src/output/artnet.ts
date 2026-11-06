@@ -1,5 +1,6 @@
 import dgram from "node:dgram";
 import { EventEmitter } from "node:events";
+import { requirePhysicalOutput } from "./policy.js";
 
 const HEADER = Buffer.from("Art-Net\0", "ascii");
 const OP_DMX = 0x5000;
@@ -40,6 +41,7 @@ export class ArtNetSender {
   constructor(public opts: ArtNetSenderOptions) {}
 
   private ensure() {
+    requirePhysicalOutput();
     if (this.socket) return;
     this.socket = dgram.createSocket("udp4");
     this.socket.on("error", (e) => { this.error = e.message; });
@@ -63,8 +65,8 @@ export class ArtNetSender {
 interface UpstreamEvents { frame: [{ universe: number; data: Uint8Array; from: string }]; error: [string]; }
 
 /**
- * Listens for Art-Net from an upstream controller (Home Assistant) so its frame can be merged
- * with ours. Lets this app be the single sender the ODE sees while HA keeps driving the lasers.
+ * Legacy packet listener retained for isolated transport tests. OutputManager never starts it:
+ * Home Assistant uses the authenticated control API, never frame merging or pass-through.
  */
 export class ArtNetListener extends EventEmitter<UpstreamEvents> {
   private socket: dgram.Socket | null = null;
@@ -76,6 +78,7 @@ export class ArtNetListener extends EventEmitter<UpstreamEvents> {
   constructor(public port: number, public allowFrom: string) { super(); }
 
   start() {
+    requirePhysicalOutput();
     if (this.socket) return;
     const s = dgram.createSocket({ type: "udp4", reuseAddr: true });
     s.on("message", (msg, rinfo) => {

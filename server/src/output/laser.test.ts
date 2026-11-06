@@ -4,6 +4,7 @@ import type { Rig } from "../../../shared/src/index.js";
 import {
   defaultLaserState, laserBytes, sanitizeLaserState, engineFixtures, laserFixtures,
   LASER_PAN_MAX, LASER_PAN_MIN, LASER_TILT, LASER_ZOOM,
+  laserStateFromPattern, nearestLaserColor,
 } from "../../../shared/src/index.js";
 import { migrateRig } from "../defaults.js";
 
@@ -70,7 +71,7 @@ test("lasers are excluded from the pattern engine and old protected ranges migra
 test("every look at every time and beat stays inside the approved vocabulary", async () => {
   const { LASER_LOOKS, sanitizeLaserState: san } = await import("../../../shared/src/index.js");
   for (const look of LASER_LOOKS) {
-    for (let t = 0; t < 40; t += 0.37) for (let b = 0; b < 17; b += 1) for (let i = 0; i < 2; i++) {
+    for (let t = 0; t < 40; t += 0.37) for (let b = -2; b < 17; b += 1) for (let i = 0; i < 2; i++) {
       const s = look.at(t, b, i, 2);
       assert.deepEqual(s, san(s), `${look.id} at t=${t} beat=${b} laser ${i} produced an unapproved state`);
       const bytes = laserBytes(s, true, false);
@@ -97,7 +98,7 @@ test("a pattern's lasers section is compiled, tagged, and forced into the vocabu
   assert.equal(out[0].color, "yellow");          // #ff8800 snaps to the nearest approved color
   assert.equal(out[0].pan, LASER_PAN_MAX);       // spread 7 clamps to the top of the window
   assert.equal(out[1].mode, "music"); assert.equal(out[1].musicColor, "cyan");
-  assert.equal(out[2].mode, "manual"); assert.equal(out[2].color, "green"); // a junk entry falls back to defaults
+  assert.equal(out[2].mode, "off"); assert.deepEqual(laserBytes(out[2], true, false), ZEROS);
   assert.throws(() => compilePattern(`export default { name: "x", lasers: "no-such-look", render() {} };`), /unknown look/);
   const plain = testPattern(`export default { name: "p", render(ctx) { ctx.fill("#fff"); } };`);
   assert.equal(plain.compiled.usesLasers, false);
@@ -115,11 +116,13 @@ test("every built-in pattern with a lasers section compiles and its lasers() sta
     withLasers++;
     if (!compiled.laserFn) continue;
     const inst = new PatternInstance(compiled, syntheticFixtures(), undefined, 1); inst.setLaserCount(2);
+    let emittingFrames = 0;
     for (let i = 0; i < 60; i++) {
       inst.render(0.1, 120, i * 0.3);
-      for (const s of inst.lasers()!) { assert.deepEqual(s, sanitizeLaserState(s), `${file}: unapproved laser state`); const b = laserBytes(s, true, false); if (s.mode === "manual") assert.equal(b[6], LASER_TILT); }
+      for (const s of inst.lasers()!) { assert.deepEqual(s, sanitizeLaserState(s), `${file}: unapproved laser state`); const b = laserBytes(s, true, false); if (s.mode === "manual") { emittingFrames++; assert.equal(b[6], LASER_TILT); } }
       assert.equal(inst.laserError, null, `${file}: ${inst.laserError}`);
     }
+    assert.ok(emittingFrames > 0, `${file}: valid built-in laser intents were lost`);
   }
   assert.ok(withLasers >= 8, `expected several built-ins with lasers, found ${withLasers}`);
 });
@@ -135,4 +138,18 @@ test("haze bytes are zero unless armed and inside a run, and never exceed the ru
   assert.deepEqual(hazeBytes({ ...h, armed: true, runUntil: now - 1 }, false, now), [0, 0]);   // deadline passed
   const s = sanitizeHaze({ fan: 9, output: -2 }, h);
   assert.equal(s.fan, 1); assert.equal(s.output, 0);
+});
+
+test("malformed pattern laser entries fail closed without losing valid palettes and spread", () => {
+  for (const raw of [true, 42, "nonsense", "#xxyyzz", {}, [], { spread: 0.5 }, { mode: "auto" }, { color: "white" }, { color: "#ff0000oops" }, { color: [1, 0] }, { color: [Infinity, 0, 0] }, { mode: "manual", pattern: "spiral" }, { musicColor: "rainbow" }, { color: "red", pan: NaN }, { color: "cyan", spread: null }, { mode: "manual", channels: [255] }, { mode: "manual", tilt: 64 }]) {
+    assert.equal(laserStateFromPattern(raw).mode, "off", JSON.stringify(raw));
+    assert.deepEqual(laserBytes(laserStateFromPattern(raw), true, false), ZEROS);
+  }
+  assert.equal(nearestLaserColor("nonsense"), "off");
+  assert.equal(laserStateFromPattern({ color: "#f80", spread: -2 }).color, "yellow");
+  assert.equal(laserStateFromPattern({ color: "#f80", spread: -2 }).pan, 48);
+  assert.equal(laserStateFromPattern({ color: [0, 1, 1], spread: 5 }).pan, 80);
+  assert.equal(laserStateFromPattern({ color: [0, 1, 1] }).color, "cyan");
+  assert.equal(laserStateFromPattern({ mode: "sound", musicColor: "blue" }).mode, "music");
+  assert.deepEqual(laserBytes({ ...defaultLaserState(), mode: "manual", pan: NaN }, true, false), ZEROS);
 });

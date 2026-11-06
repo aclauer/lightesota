@@ -17,16 +17,17 @@ Node 22 is required. On this machine it comes from nix:
 ```bash
 nix-shell          # or: nix develop
 npm install
-npm run dev        # server on :8787 (API/WS), Vite on :5173 (UI with hot reload)
+LIGHTESOTA_PREVIEW=1 npm run dev  # permanently veto physical output in this process
 ```
 
-Open http://localhost:5173 during development. From localhost you are admin automatically.
+Open http://localhost:5173 during development and authenticate explicitly. Tokenless
+loopback administration is disabled, including through reverse proxies.
 
 Production build and run (serves the built UI from the same port):
 
 ```bash
 npm run build
-npm start          # http://localhost:8787
+LIGHTESOTA_PREVIEW=1 npm start  # http://localhost:8787, physical output vetoed
 ```
 
 Or with Docker (host networking so UDP reaches the ODE):
@@ -41,31 +42,27 @@ needs `ANTHROPIC_API_KEY` there; restart the server after adding it. Everything 
 stores (rig, scenes, playlists, your patterns, agent chats, share tokens) lives in `data/` as
 JSON and JavaScript files.
 
-## First run against the real rig
+## Output ownership and commissioning
 
 The server starts with the office rig from the lighting notes: four SlimPAR Pro H washes in 12CH
 at 101/113/125/137, two Saber Spot pinspots at 29/30 (not on the DMX chain yet, so they start
-disabled; enable them in the Stage editor once wired), two Scorpion Dual RGB ILS lasers at 31/41
-(see [Lasers](#lasers)), a Hurricane Haze 4D hazer at 51 (see [Haze](#haze)), Art-Net to
-10.10.0.204 universe 0.
+disabled and excluded from this integration), two Scorpion Dual RGB ILS lasers at 31/41
+(see [Lasers](#lasers)), a Hurricane Haze 4D at 51 (see [Haze](#haze)),
+Art-Net to 10.10.0.204 universe 0.
 
-**Two senders share the ODE: Home Assistant and this app.** The ODE's ports are set to **HTP merge**
-(highest value wins per channel), which is what makes that work:
+Lightesota is the intended single output authority; Home Assistant becomes an authenticated
+API client through the [HA component](integrations/home_assistant/README.md). **No live cutover
+has occurred.** If a legacy sender remains active, shared Off cannot be guaranteed. Channelwise
+HTP merging is invalid for laser frames and program/mode enums; it can combine individually
+approved frames into a different command. Do not use HTP or upstream merging for this integration.
 
-- HA's frame is all zeros for the washes when its lights are off, so the app's values win there.
-- Laser channels (31–50) and hazer channels (51–52) are 0 whenever the app's lasers and hazer are
-  disarmed, which is the normal state, so HA's gated values win there; see Lasers below for what
-  happens when both HA and the app have lasers enabled.
-- Either sender can stop without breaking the other. "Release output" in Settings stops the app's
-  transmission entirely when HA alone should drive the rig.
-- While the app is lit, HA cannot force a wash darker than the app's level (HTP takes the maximum).
-
-If the ODE is ever back on **Merge None**, it keeps the first sender it hears and silently drops the
-other; the symptom is the Live view moving while the lights stay dark, and `merge_err=1` on the
-ODE's config page (`http://10.10.0.204/index.html?config.cgi`). Either set HTP again, or use the
-app's "Merge an upstream Art-Net sender" setting with HA pointed at the app's IP.
-
-Check the DMX monitor in Settings to see exactly what is being sent before you trust it.
+All installations default to a process-level physical-output veto, including existing saved
+settings. Actual transport requires `LIGHTESOTA_OUTPUT_COMMISSIONED=1` after explicit operator
+commissioning and old-sender retirement. `LIGHTESOTA_PREVIEW=1` always overrides that flag and
+cannot be disabled by settings, imports or API calls. Boot keeps libraries and starts output
+dark/disarmed. Follow the [migration and rollback procedure](docs/deployment/migration.md),
+including the exact safe loopback preview command. The DMX monitor shows commanded bytes,
+not observed light or proof of delivered darkness.
 
 ## Using the console
 
@@ -73,15 +70,22 @@ Check the DMX monitor in Settings to see exactly what is being sent before you t
   quick scene buttons. Tap a fixture to solo it, flash it, or override its color.
 - **Patterns**: pick a look. Editors can open the code editor; `⌘S` saves and reloads the live
   pattern with the current parameters.
-- **Scenes**: saved looks (pattern + params + BPM + master). Hotkeys 1–9, favorites.
+- **Scenes**: saved looks (pattern + params + BPM + master + independent wash modes). Hotkeys 1–9, favorites.
 - **Playlists**: timed sequences of scenes in bars or seconds, loop/shuffle.
 - **Agent**: describe a look; the agent writes the pattern, test-renders it, applies it and exposes
   the tunable parts as parameters. Needs `ANTHROPIC_API_KEY` on the server.
 - **Stage**: drag fixtures to where they hang, set addresses and tags, add Hue lights.
-- **Settings**: Art-Net target, upstream merge, Hue pairing, share links with QR code, theme,
+- **Settings**: Art-Net target, output ownership, Hue pairing, share links with QR code, theme,
   export/import, DMX monitor.
 
-Keyboard: `space` blackout, `T` tap tempo, `R` resync, `[` `]` nudge, `1`–`9` scenes, `0` dark.
+**Stop lighting / All Off** cancels automated writers and pending intents, clears effect output
+and disarms. A fresh Start is required. **Blackout** is a separate temporary mute; laser output
+requires an explicit operator restart after release. Per-wash Off/Normal/Music6/Music32 and
+manual ownership preserve unselected fixtures; release to pattern is explicit. Shared BPM shows
+are finite, staged and washes-only by default. Fixture microphones, shared clock and browser
+microphone sources are labeled separately; see [HTTPS/microphone setup](docs/deployment/https.md).
+
+Keyboard: `space` temporary blackout, `T` tap tempo, `R` resync, `[` `]` nudge, `1`–`9` scenes, `0` Stop lighting.
 
 ### Sharing with friends
 
@@ -97,8 +101,8 @@ On iPhone, open the link in Safari and use Share → Add to Home Screen for a fu
 
 The two Scorpion Dual lasers are fixtures in the rig, but they are not lights as far as the rest of
 the app is concerned: patterns never see them, the agent has no tool for them, overrides and flash
-skip them, and scenes do not store them. The only way light leaves a laser is the **Lasers** card on
-the Live tab, and it only speaks the preset vocabulary the laser operator approved on site:
+skip them, and scenes do not store them. The **Lasers** card, guarded shared shows and operator
+API actions all use the same preset vocabulary the laser operator approved on site:
 
 - **Manual**: fan (flat line) or wave (zigzag), one of six fixed colors, "pan" within 48–80. On the
   Scorpion Dual the pan channel is really a spread: the unit's two mirrored fans move in toward each
@@ -106,26 +110,28 @@ the Live tab, and it only speaks the preset vocabulary the laser operator approv
   at 53, strobe and rolling at 0.
 - **Sound**: the fixture's own sound-active modes (multicolor or one color); the laser picks its
   patterns and positions itself, as approved for that mode.
-- Anything else, including every unknown value a client might send, encodes as all zeros, the
-  Scorpion's dark and still state.
+- Invalid preset commands are rejected. Disarmed, Off and blacked-out laser states encode
+  as all zeros; raw channels are never accepted from patterns or API clients.
 
 Patterns drive the lasers too. A pattern may export a `lasers` section: either the name of a look
 (`lasers: "beat-colors"`) or a function `lasers(ctx)` that returns one entry per laser, built from the
 same vocabulary (mode, fan/wave, a color that snaps to the nearest approved one, spread 0..1 for how far
 the unit's two mirrored fans sit apart, or a sound mode). Such patterns are tagged **laser** on the
-Patterns tab, and most of the party and color built-ins have one. Applying a pattern without a lasers
-section turns the lasers off. The agent writes laser sections when asked for a look "with lasers".
+Patterns tab, and most of the party and color built-ins have one. An operator must explicitly select
+Follow after arming to authorize the current pattern source; applying a different pattern clears that
+pattern ownership and its laser output. Manual laser looks have their own explicit selection. The agent writes laser sections when asked for a look "with lasers".
 
 An admin must **arm** the lasers before any preset is emitted. The arm is in memory only: every
-server start comes up disarmed, "Release output" disarms, blackout holds the laser channels at zero
-while it is on, and the **All lasers off** button (anyone with control, so a guest can hit it) sets
+server start comes up disarmed, "Release output" disarms, blackout clears laser intents,
+and the **All lasers off** button (anyone with control, so a guest can hit it) sets
 every laser to Off and disarms. The header shows a red "Lasers armed" badge for everyone while the
 rig is armed.
 
 Only the trained operator enables the lasers (guide Step 12.4). Physical power isolation is the stop;
-software off is not an interlock. If Home Assistant's own laser entities are enabled at the same
-time, the ODE's HTP merge takes the per-channel maximum of two approved frames, which is still an
-approved frame, but run one controller at a time anyway.
+software off is not an interlock. Arm alone never emits a previously staged preset; make a new
+deliberate preset/Start action after arming. Never run a legacy Home Assistant laser sender
+alongside Lightesota: the per-channel maximum of approved frames is **not** necessarily approved.
+Laser sound sensitivity remains physical S5 at 031/041, with no DMX sensitivity control.
 
 ## Haze
 
@@ -162,14 +168,18 @@ pattern that hangs is disabled rather than freezing the show. Built-ins live in
 
 ## Safety rules this app keeps
 
-- Lasers are written only from the approved preset tables in `shared/src/laser.ts`, only while armed;
-  the hazer only during an armed, timed run (`shared/src/haze.ts`).
+- The hazer (51–52) is uncommissioned and held at 0, including with upstream data.
+  The fixture editor refuses addresses that overlap it.
+- Lasers are written only from the bounded preset tables in `shared/src/laser.ts`, only while armed.
+  Pattern laser output additionally requires an operator to select **Follow** for the current loaded source.
+  Applying/reloading/editing the pattern or its parameters, Stop, disarm and manual takeover invalidate Follow.
+  Arm alone never restores it. The software vocabulary does not establish optical safety.
   Do not add channel functions, widen the pan window or lower the tilt without the operator.
 - Software off is not an emergency stop. The ODE can hold its last frame. Physical power isolation
   is the stop.
-- The ODE merges HA and this app with HTP: whichever sender has the effect enabled wins per channel,
-  so run effects from one controller at a time.
-- On shutdown (Ctrl-C) the server sends a few all-zero frames so the rig goes dark.
+- Use one final output authority. Retire legacy direct senders before commissioning this one.
+- Shutdown attempts a zero frame when transport is permitted; successful software calls do not
+  prove delivery or physical darkness. Preview never sends even an Off frame.
 
 ## Layout
 
@@ -180,4 +190,5 @@ web/      React + Vite app
 patterns/ built-in patterns
 ```
 
-`npm test` runs the server unit tests (sandbox, DMX mapping, Art-Net packets, agent tools).
+`npm test` runs server control/output/API regressions and fake browser audio/WebSocket tests.
+See the [HA adapter tests](integrations/home_assistant/README.md#offline-validation) for Python checks.

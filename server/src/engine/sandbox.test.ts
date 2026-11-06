@@ -44,3 +44,19 @@ test("NaN output is sanitized", () => {
   assert.deepEqual([...inst.out.slice(0, 3)], [0, 1, 0]);
   assert.equal(inst.out.length, syntheticFixtures().length * OUT_STRIDE);
 });
+
+test("failed, empty and malformed laser callbacks clear intent and valid callbacks stay typed", () => {
+  for (const expression of ["undefined", "[]", "[{}]", "[true]", "['nonsense']", "[{mode:'manual',color:undefined}]", "[{mode:'manual',color:()=>1}]"]) {
+    const instance = new PatternInstance(compilePattern(`export default {render(){}, lasers(){return ${expression};}}`), [], {}, 1);
+    instance.render(0.025, 120, 0);
+    assert.ok(instance.lasers()!.every((state) => state.mode === "off"), expression);
+  }
+  const instance = new PatternInstance(compilePattern(`export default {render(ctx){if(ctx.frame) throw new Error('bad frame');}, lasers(){return [{color:'#00ffff', spread:1}];}}`), [], {}, 1);
+  instance.render(0.025, 120, 0);
+  assert.equal(instance.lasers()![0].color, "cyan");
+  instance.render(0.025, 120, 0.05);
+  assert.deepEqual(instance.lasers(), [], "render errors must not keep emitting lasers");
+  const timeout = new PatternInstance(compilePattern(`export default {render(){}, lasers(){while(true){}}}`), [], {}, 1);
+  assert.deepEqual(timeout.lasers(), []);
+  assert.match(timeout.laserError!, /timed out/);
+});

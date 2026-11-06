@@ -1,3 +1,4 @@
+import type { WashState, CoordinatedShowState } from "./control.js";
 import type { LasersState } from "./laser.js";
 import type { HazeState } from "./haze.js";
 // Core domain types shared between server and web.
@@ -188,6 +189,13 @@ export interface DeviceInfo {
 }
 
 export interface ShowState {
+  /** Ownership barrier, fresh on every boot. Old requests cannot resume output. */
+  generation: number;
+  /** Epoch milliseconds of the last ownership barrier, for queued automation age checks. */
+  controlledAt: number;
+  stopped: boolean;
+  washes: Record<string, WashState>;
+  coordinatedShow: CoordinatedShowState | null;
   /** Recently deployed patterns, newest first, one entry per pattern. */
   history: HistoryEntry[];
   patternId: string | null;
@@ -205,7 +213,7 @@ export interface ShowState {
   solo: string[];
   activeSceneId: string | null;
   playlist: PlaylistPlayback | null;
-  /** True when a configured upstream Art-Net source is being passed through untouched. */
+  /** True when Lightesota has relinquished sending; no upstream frames are passed through. */
   released: boolean;
   /** Server time (ms) at which the show blacks out, or null. */
   sleepAt: number | null;
@@ -221,6 +229,8 @@ export interface ShowState {
 export interface AudioFrame { level: number; bass: number; mid: number; high: number; onset: boolean; bpm: number | null; }
 
 export interface Scene {
+  /** Optional in legacy scenes; captures wash modes without any laser arm/intents. */
+  washes?: Record<string, WashState>;
   id: string;
   name: string;
   patternId: string | null;
@@ -272,7 +282,7 @@ export interface ArtNetSettings {
   port: number;
   universe: number;
   fps: number;
-  /** Listen for an upstream Art-Net sender (e.g. Home Assistant) and merge its frame. */
+  /** Legacy configuration retained for rollback/export only; upstream input is disabled. */
   upstream: {
     enabled: boolean;
     listenPort: number;
@@ -319,6 +329,7 @@ export interface Settings {
 }
 
 export interface OutputStatus {
+  control?: { preview: boolean; commissioned: boolean; physicalState: "unverified"; authority: "lightesota" };
   artnet: { sending: boolean; fps: number; lastSentAt: number; frames: number; error?: string };
   upstream: { listening: boolean; lastFrameAt: number; from: string; frames: number };
   hue: { connected: boolean; lights: number; lastError?: string };

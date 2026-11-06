@@ -1,3 +1,4 @@
+import { PREVIEW } from "../output/policy.js";
 import fs from "node:fs";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
@@ -5,7 +6,7 @@ import { nanoid } from "nanoid";
 import type { AgentChatMessage, AgentConversation, AgentEvent, AgentToolCall, Role } from "../../../shared/src/index.js";
 import { config } from "../config.js";
 import { dynamicSystem, STATIC_SYSTEM } from "./prompt.js";
-import { runTool, TOOL_DEFS, type AgentHost } from "./tools.js";
+import { createTurnToolRunner, TOOL_DEFS, type AgentHost } from "./tools.js";
 
 interface StoredConversation extends AgentConversation {
   /** Raw API history, kept separately from the UI transcript. */
@@ -21,10 +22,12 @@ export class AgentService {
   constructor(private host: AgentHost, private broadcast: (ev: AgentEvent, conversationId: string | null, ownerDeviceId: string | undefined) => void) {}
 
   hasCredentials(): boolean {
+    if (PREVIEW) return false;
     return !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || fs.existsSync(path.join(process.env.HOME ?? "", ".config", "anthropic")));
   }
 
   private getClient(): Anthropic {
+    if (PREVIEW) throw new Error("Agent provider connections are disabled in preview");
     if (!this.client) this.client = new Anthropic({ maxRetries: 2, timeout: 10 * 60 * 1000 });
     return this.client;
   }
@@ -72,7 +75,10 @@ export class AgentService {
 
   // ---- chat ----
   async send(conversationId: string | null, text: string, context?: { patternId?: string | null; by?: string; owner?: { deviceId: string; name: string }; role?: Role }) {
-    const caller = { role: context?.role ?? "guest", by: context?.by ?? "" };
+    if (PREVIEW) throw new Error("Agent provider connections are disabled in preview");
+    const caller = { role: context?.role ?? "viewer", by: context?.by ?? "" };
+    // Capture before awaiting any provider response. Stop/disarm/takeover never renew this turn.
+    const runTurnTool = createTurnToolRunner(this.host, caller);
     const existing = conversationId ? this.load(conversationId) : null;
     const conv = existing ?? this.create(context?.owner);
     if (!conv.ownerDeviceId && context?.owner) { conv.ownerDeviceId = context.owner.deviceId; conv.ownerName = context.owner.name; }
@@ -176,7 +182,7 @@ export class AgentService {
           call.partial = undefined;
           let result: string, isError = false;
           try {
-            result = runTool(this.host, tu.name, tu.input, caller);
+            result = runTurnTool(tu.name, tu.input);
           } catch (e) {
             result = `Error: ${(e as Error).message}`;
             isError = true;

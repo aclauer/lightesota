@@ -4,17 +4,18 @@ import { compilePattern, OUT_STRIDE, PatternInstance, SILENT_AUDIO, type AudioSt
 import type { LaserState, ParamValues } from "../../../shared/src/index.js";
 
 export type ToWorker =
-  | { type: "load"; slot: "a" | "b"; id: string; source: string; params?: ParamValues; seed: number }
+  | { type: "load"; slot: "a" | "b"; id: string; source: string; params?: ParamValues; seed: number; revision: number; generation: number }
   | { type: "move"; from: "a"; to: "b" }          // current becomes outgoing
   | { type: "unload"; slot: "a" | "b" }
-  | { type: "params"; slot: "a" | "b"; params: ParamValues }
+  | { type: "params"; slot: "a" | "b"; id: string; params: ParamValues; revision: number; generation: number }
   | { type: "fixtures"; fixtures: SandboxFixture[]; lasers: number }
-  | { type: "render"; dt: number; bpm: number; beat: number; mix: number; audio?: AudioState };
+  | { type: "render"; dt: number; bpm: number; beat: number; mix: number; audio?: AudioState; revision: number; generation: number };
 
 export type FromWorker =
-  | { type: "loaded"; slot: "a" | "b"; id: string; params: ParamValues; usesLasers: boolean; laserLook: string | null }
-  | { type: "loadError"; slot: "a" | "b"; id: string; error: string }
-  | { type: "frame"; buf: Float32Array; errorA: string | null; errorB: string | null; renderMs: number; logs: string[]; lasers?: LaserState[] | null };
+  | { type: "loaded"; slot: "a" | "b"; id: string; params: ParamValues; usesLasers: boolean; laserLook: string | null; revision: number; generation: number }
+  | { type: "loadError"; slot: "a" | "b"; id: string; error: string; revision: number; generation: number }
+  | { type: "paramsApplied"; slot: "a" | "b"; id: string; params: ParamValues; revision: number; generation: number }
+  | { type: "frame"; buf: Float32Array; errorA: string | null; errorB: string | null; renderMs: number; logs: string[]; lasers?: LaserState[] | null; revision: number; generation: number };
 
 let fixtures: SandboxFixture[] = [];
 let laserCount = 0;
@@ -35,15 +36,18 @@ port.on("message", (msg: ToWorker) => {
       slots.b?.setFixtures(fixtures); slots.b?.setLaserCount(laserCount);
       break;
     case "load": {
+      // A rejected replacement must never leave its predecessor masquerading as the new source.
+      slots[msg.slot] = null;
       try {
         const compiled = compilePattern(msg.source, { timeoutMs: 1000, log });
         const inst = new PatternInstance(compiled, fixtures, msg.params, msg.seed, log);
         inst.setLaserCount(laserCount);
         if (inst.error) throw new Error(inst.error);
         slots[msg.slot] = inst;
-        port.postMessage({ type: "loaded", slot: msg.slot, id: msg.id, params: inst.params, usesLasers: compiled.usesLasers, laserLook: compiled.laserLook ?? null } satisfies FromWorker);
+        frameNo = 0;
+        port.postMessage({ type: "loaded", slot: msg.slot, id: msg.id, params: inst.params, usesLasers: compiled.usesLasers, laserLook: compiled.laserLook ?? null, revision: msg.revision, generation: msg.generation } satisfies FromWorker);
       } catch (e) {
-        port.postMessage({ type: "loadError", slot: msg.slot, id: msg.id, error: (e as Error).message } satisfies FromWorker);
+        port.postMessage({ type: "loadError", slot: msg.slot, id: msg.id, error: (e as Error).message, revision: msg.revision, generation: msg.generation } satisfies FromWorker);
       }
       break;
     }
@@ -54,9 +58,15 @@ port.on("message", (msg: ToWorker) => {
     case "unload":
       slots[msg.slot] = null;
       break;
-    case "params":
-      slots[msg.slot]?.setParams(msg.params);
+    case "params": {
+      const instance = slots[msg.slot];
+      if (instance) {
+        instance.setParams(msg.params);
+        frameNo = 0;
+        port.postMessage({ type: "paramsApplied", slot: msg.slot, id: msg.id, params: instance.params, revision: msg.revision, generation: msg.generation } satisfies FromWorker);
+      }
       break;
+    }
     case "render": {
       const t0 = performance.now();
       const n = Math.max(1, fixtures.length);
@@ -78,11 +88,15 @@ port.on("message", (msg: ToWorker) => {
           buf[o + 7] = mix < 0.5 ? b.out[o + 7] : a.out[o + 7];
         }
       } else if (a) buf.set(a.out);
-      else if (b) buf.set(b.out);
+      else if (b) {
+        buf.set(b.out);
+        for (let f = 0; f < fixtures.length; f++) buf[f * OUT_STRIDE + 6] *= 1 - msg.mix;
+      }
       // Lasers follow the incoming pattern only (no crossfade through laser values), about 10 Hz.
       let lasers: LaserState[] | null | undefined;
-      if (a?.compiled.laserFn && frameNo++ % 4 === 0) { lasers = a.lasers(); if (a.laserError) log(a.laserError); }
-      const out: FromWorker = { type: "frame", buf, errorA: a?.error ?? null, errorB: b?.error ?? null, renderMs: performance.now() - t0, logs, ...(lasers !== undefined ? { lasers } : {}) };
+      if (!a || !a.compiled.usesLasers || a.disabled || a.error) lasers = [];
+      else if (a.compiled.laserFn && frameNo++ % 4 === 0) { lasers = a.lasers(); if (a.laserError) log(a.laserError); }
+      const out: FromWorker = { type: "frame", buf, errorA: a?.error ?? null, errorB: b?.error ?? null, renderMs: performance.now() - t0, logs, revision: msg.revision, generation: msg.generation, ...(lasers !== undefined ? { lasers } : {}) };
       logs = [];
       port.postMessage(out, [buf.buffer]);
       break;

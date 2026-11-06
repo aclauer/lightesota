@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { Worker } from "node:worker_threads";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { engineFixtures, findProfile, laserFixtures, type LaserState, type Fixture, type FixtureOverride, type FrameColor, type ParamValues, type Rig } from "../../../shared/src/index.js";
+import { engineFixtures, findProfile, laserFixtures, type LaserState, type Fixture, type FixtureOverride, type FrameColor, type ParamValues, type Rig, type WashState } from "../../../shared/src/index.js";
 import { OUT_STRIDE, SILENT_AUDIO, type AudioState, type SandboxFixture } from "./sandbox.js";
 import type { FromWorker, ToWorker } from "./worker.js";
 
@@ -26,10 +26,12 @@ interface EngineEvents {
   frame: [EngineFrame];
   status: [EngineStatus];
   log: [string];
-  patternLoaded: [{ id: string; params: ParamValues; usesLasers: boolean; laserLook: string | null }];
+  patternLoaded: [{ id: string; params: ParamValues; usesLasers: boolean; laserLook: string | null; generation: number; revision: number }];
   /** The live pattern's lasers() output (already sanitized), one entry per laser. */
-  lasers: [LaserState[]];
+  lasers: [{ states: LaserState[]; id: string | null; generation: number; revision: number }];
   patternError: [{ id: string; error: string }];
+  recovery: [];
+  beforeFrame: [];
 }
 
 /**
@@ -61,6 +63,13 @@ export class Engine extends EventEmitter<EngineEvents> {
   master = 1;
   blackout = false;
   overrides: Record<string, FixtureOverride> = {};
+  washes: Record<string, WashState> = {};
+  private revision = 0;
+  /** Worker incarnation, independent of routine show controls and pattern source revisions. */
+  private generation = 0;
+  get patternRevision() { return this.revision; }
+  get patternGeneration() { return this.generation; }
+  lastFrame: EngineFrame | null = null;
   solo = new Set<string>();
   private audio: AudioState = { ...SILENT_AUDIO };
   private audioAt = 0;
@@ -73,7 +82,7 @@ export class Engine extends EventEmitter<EngineEvents> {
     this.audio = { ...a, active: true };
     this.audioAt = Date.now();
   }
-  get audioActive() { return Date.now() - this.audioAt < 2000; }
+  get audioActive() { return this.audioAt > 0 && Date.now() - this.audioAt < 2000 && this.audio.level > 0.005; }
 
   // crossfade
   private currentId: string | null = null;
@@ -111,6 +120,7 @@ export class Engine extends EventEmitter<EngineEvents> {
   beatAt(now: number) { return ((now - this.beatOrigin) / 60000) * this.bpm; }
 
   setBpm(bpm: number) {
+    if (!Number.isFinite(bpm)) throw new Error("BPM must be finite");
     bpm = Math.max(20, Math.min(300, bpm));
     const now = Date.now();
     const beat = this.beatAt(now);
@@ -123,22 +133,45 @@ export class Engine extends EventEmitter<EngineEvents> {
   /** Load a pattern into slot A, moving the current one to slot B for a crossfade. */
   loadPattern(id: string, source: string, params: ParamValues | undefined, crossfadeMs: number) {
     this.ensureWorker();
+    this.revision++;
+    this.awaiting = false; // an old in-flight frame now belongs to the invalidated revision
     this.pendingLoad = { id, source, params, crossfadeMs };
-    this.post({ type: "load", slot: "a", id, source, params, seed: this.seed++ });
+    this.post({ type: "load", slot: "a", id, source, params, seed: this.seed++, revision: this.revision, generation: this.generation });
   }
 
   clearPattern(crossfadeMs: number) {
-    this.ensureWorker();
-    if (this.currentId !== null) {
+    this.revision++;
+    this.pendingLoad = null;
+    this.lastLoaded = null;
+    if (this.currentId !== null && crossfadeMs > 0) {
       this.post({ type: "move", from: "a", to: "b" });
       this.beginFade(crossfadeMs);
+    } else {
+      this.post({ type: "unload", slot: "a" });
+      this.post({ type: "unload", slot: "b" });
+      this.fading = false;
+      this.lastRaw = new Float32Array(Math.max(1, this.fixtures.length) * OUT_STRIDE);
     }
     this.currentId = null;
-    this.pendingLoad = null;
+    this.awaiting = false;
     this.patternError = undefined;
+    this.publishFrame(this.lastRaw);
   }
 
-  setParams(params: ParamValues) { this.post({ type: "params", slot: "a", params }); }
+  /** Invalidates pending loads, fades and queued worker frames synchronously. */
+  halt() { this.clearPattern(0); }
+  refresh() { this.publishFrame(this.lastRaw); }
+
+  setParams(params: ParamValues) {
+    if (this.pendingLoad) {
+      const pending = this.pendingLoad;
+      this.loadPattern(pending.id, pending.source, params, pending.crossfadeMs);
+      return;
+    }
+    this.revision++;
+    this.awaiting = false;
+    if (this.currentId) this.post({ type: "params", slot: "a", id: this.currentId, params, revision: this.revision, generation: this.generation });
+  }
 
   private beginFade(ms: number) {
     this.fadeStart = Date.now();
@@ -156,13 +189,20 @@ export class Engine extends EventEmitter<EngineEvents> {
     const file = fileURLToPath(new URL(isTs ? "./worker.ts" : "./worker.js", import.meta.url));
     // In dev (tsx) the worker registers tsx's hooks itself so .ts imports resolve inside the thread.
     const w = isTs
-      ? new Worker(`import { register } from "tsx/esm/api"; register(); await import(${JSON.stringify(pathToFileURL(file).href)});`, { eval: true })
+      ? new Worker(`import { register } from ${JSON.stringify(import.meta.resolve("tsx/esm/api"))}; register(); await import(${JSON.stringify(pathToFileURL(file).href)});`, { eval: true })
       : new Worker(file);
-    w.on("message", (m: FromWorker) => this.onWorkerMessage(m));
-    w.on("error", (e) => { this.emit("log", `worker error: ${e.message}`); this.restartWorker(); });
-    w.on("exit", (code) => { if (this.worker === w) { this.emit("log", `worker exited (${code})`); this.worker = null; } });
+    this.generation++;
+    w.on("message", (m: FromWorker) => { if (this.worker === w) this.onWorkerMessage(m); });
+    w.on("error", (e) => { if (this.worker === w) { this.emit("log", `worker error: ${e.message}`); this.restartWorker(); } });
+    w.on("exit", (code) => { if (this.worker === w) { this.emit("log", `worker exited (${code})`); this.restartWorker(); } });
     this.worker = w;
     w.postMessage({ type: "fixtures", fixtures: this.sandboxFixtures, lasers: this.laserCount } satisfies ToWorker);
+    // An explicit Start during recovery backoff waits here. The failed worker's old
+    // intent was cleared by halt(), so only a new request can be pending.
+    if (this.pendingLoad) {
+      const pending = this.pendingLoad;
+      w.postMessage({ type: "load", slot: "a", id: pending.id, source: pending.source, params: pending.params, seed: this.seed++, revision: this.revision, generation: this.generation } satisfies ToWorker);
+    }
   }
 
   private restartWorker() {
@@ -172,40 +212,45 @@ export class Engine extends EventEmitter<EngineEvents> {
     old?.terminate().catch(() => {});
     this.awaiting = false;
     this.ensureWorker();
-    // Reload the current pattern, if any, without a crossfade.
-    const p = this.lastLoaded;
-    if (p) this.post({ type: "load", slot: "a", id: p.id, source: p.source, params: p.params, seed: this.seed++ });
+    // Recovery is an ownership barrier. Never replay an emitting pattern after failure.
+    this.halt();
+    this.emit("recovery");
     this.emitStatus();
   }
-  private lastLoaded: { id: string; source: string; params?: ParamValues } | null = null;
+  private lastLoaded: { id: string; source: string; params?: ParamValues; usesLasers: boolean; laserLook: string | null } | null = null;
   private laserCount = 0;
   private lastWorkerStart = 0;
 
   private post(msg: ToWorker) { this.worker?.postMessage(msg); }
 
   private onWorkerMessage(m: FromWorker) {
+    if (m.generation !== this.generation || m.revision !== this.revision) return;
     switch (m.type) {
       case "loaded": {
         if (m.slot !== "a") return;
         const pending = this.pendingLoad;
-        if (!pending || pending.id !== m.id) {
-          // A restart reload or stale load: no fade.
-          this.currentId = m.id;
-          this.emit("patternLoaded", { id: m.id, params: m.params, usesLasers: m.usesLasers, laserLook: m.laserLook });
-          return;
-        }
+        if (!pending || pending.id !== m.id) return;
         // The worker has already replaced slot A with the new instance; the previous
         // instance was moved to B just before the load (see loadPattern path below).
         this.currentId = m.id;
-        this.lastLoaded = { id: m.id, source: pending.source, params: m.params };
+        this.lastLoaded = { id: m.id, source: pending.source, params: m.params, usesLasers: m.usesLasers, laserLook: m.laserLook };
         this.pendingLoad = null;
         this.patternError = undefined;
-        this.emit("patternLoaded", { id: m.id, params: m.params, usesLasers: m.usesLasers, laserLook: m.laserLook });
+        this.emit("patternLoaded", { id: m.id, params: m.params, usesLasers: m.usesLasers, laserLook: m.laserLook, revision: m.revision, generation: m.generation });
         this.emitStatus();
         break;
       }
+      case "paramsApplied": {
+        const loaded = this.lastLoaded;
+        if (m.slot !== "a" || !loaded || loaded.id !== m.id || this.currentId !== m.id || this.pendingLoad) return;
+        loaded.params = m.params;
+        this.emit("patternLoaded", { id: m.id, params: m.params, usesLasers: loaded.usesLasers, laserLook: loaded.laserLook, revision: m.revision, generation: m.generation });
+        break;
+      }
       case "loadError":
+        if (m.slot !== "a" || !this.pendingLoad || this.pendingLoad.id !== m.id) return;
         this.pendingLoad = null;
+        this.currentId = null;
         this.patternError = m.error;
         this.emit("patternError", { id: m.id, error: m.error });
         this.emitStatus();
@@ -218,7 +263,7 @@ export class Engine extends EventEmitter<EngineEvents> {
         if (err !== this.patternError) { this.patternError = err; this.emitStatus(); }
         this.lastRaw = m.buf;
         this.publishFrame(m.buf);
-        if (m.lasers) this.emit("lasers", m.lasers);
+        if (m.lasers !== undefined) this.emit("lasers", { states: m.lasers ?? [], id: this.currentId, revision: m.revision, generation: m.generation });
         break;
       }
     }
@@ -233,13 +278,17 @@ export class Engine extends EventEmitter<EngineEvents> {
   }
 
   private tick() {
+    this.emit("beforeFrame");
     const now = Date.now();
-    if (!this.worker) this.ensureWorker();
+    if (!this.worker) {
+      this.ensureWorker();
+      if (!this.worker) { this.publishFrame(this.lastRaw); return; }
+    }
     // Watchdog: a pattern that hangs the worker gets killed.
     if (this.awaiting) {
       if (now - this.awaitingSince > 750) {
         this.emit("log", "render timed out; restarting worker");
-        this.patternError = "render() took too long (infinite loop?) - pattern reloaded";
+        this.patternError = "render() took too long; lighting stopped, explicit Start required";
         this.restartWorker();
       } else {
         // Keep output alive with the last frame while we wait.
@@ -259,7 +308,7 @@ export class Engine extends EventEmitter<EngineEvents> {
     this.awaitingSince = now;
     const audio: AudioState = this.audioActive ? { ...this.audio, onset: this.pendingOnset } : { ...SILENT_AUDIO };
     this.pendingOnset = false;
-    this.post({ type: "render", dt, bpm: this.bpm, beat: this.beatAt(now), mix, audio });
+    this.post({ type: "render", dt, bpm: this.bpm, beat: this.beatAt(now), mix, audio, revision: this.revision, generation: this.generation });
     this.frameCount++;
     if (now - this.fpsWindowStart >= 1000) {
       this.measuredFps = (this.frameCount * 1000) / (now - this.fpsWindowStart);
@@ -300,6 +349,12 @@ export class Engine extends EventEmitter<EngineEvents> {
         if (ov.dim !== undefined) dim = dim + (ov.dim - dim) * k;
         if (ov.r !== undefined || ov.g !== undefined || ov.b !== undefined) strobe = 0;
       }
+      const wash = this.washes[f.id];
+      if (wash && wash.owner !== "pattern") {
+        [r, g, b, w] = wash.rgbw.map((v) => v / 255);
+        a = 0; uv = 0; strobe = 0;
+        dim = wash.mode === "off" ? 0 : wash.brightness / 255;
+      }
       if (soloing && !this.solo.has(f.id)) dim = 0;
       dim *= this.master * (f.trim ?? 1);
       if (this.blackout) dim = 0;
@@ -307,7 +362,8 @@ export class Engine extends EventEmitter<EngineEvents> {
       values[o + 6] = dim; values[o + 7] = strobe;
       colors[i] = { r: round3(r), g: round3(g), b: round3(b), w: round3(w), dim: round3(dim) };
     }
-    this.emit("frame", { t: Date.now(), fixtures: this.fixtures, values, colors });
+    this.lastFrame = { t: Date.now(), fixtures: this.fixtures, values, colors };
+    this.emit("frame", this.lastFrame);
   }
 
   // Public wrapper that handles fade bookkeeping around a load.

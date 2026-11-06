@@ -1,0 +1,102 @@
+# Optional /config/packages/lightesota.yaml. These actions send REST commands only.
+# Entity IDs below must be reconciled using README.md before enabling this package.
+input_select:
+  lightesota_wash_scope:
+    name: Washes to use
+    options: [All washes, Side A (W1/W2), Side B (W3/W4)]
+    initial: All washes
+  lightesota_music_palette:
+    name: Fixture microphone palette
+    options: [Music6, Music32]
+    initial: Music6
+
+script:
+  lightesota_warm_arrival:
+    alias: Warm Arrival · 32/255
+    mode: single
+    sequence:
+      - action: light.turn_on
+        target:
+          entity_id: [light.office_dmx_w1, light.office_dmx_w2, light.office_dmx_w3, light.office_dmx_w4]
+        data:
+          effect: Normal
+          brightness: 32
+          rgbw_color: [255, 120, 32, 64]
+  lightesota_calm_blue:
+    alias: Calm Blue · 25/255
+    mode: single
+    sequence:
+      - action: light.turn_on
+        target:
+          entity_id: [light.office_dmx_w1, light.office_dmx_w2, light.office_dmx_w3, light.office_dmx_w4]
+        data:
+          effect: Normal
+          brightness: 25
+          rgbw_color: [0, 0, 255, 0]
+  lightesota_cyan_magenta:
+    alias: Cyan / Magenta sides · 38/255
+    mode: single
+    sequence:
+      - action: light.turn_on
+        target:
+          entity_id: [light.office_dmx_w1, light.office_dmx_w2]
+        data:
+          effect: Normal
+          brightness: 38
+          rgbw_color: [0, 255, 255, 0]
+      - action: light.turn_on
+        target:
+          entity_id: [light.office_dmx_w3, light.office_dmx_w4]
+        data:
+          effect: Normal
+          brightness: 38
+          rgbw_color: [255, 0, 255, 0]
+  lightesota_selected_music:
+    alias: Start selected fixture microphones · 38/255
+    mode: single
+    sequence:
+      - variables:
+          selected: >-
+            {{ {'All washes': ['light.office_dmx_w1','light.office_dmx_w2','light.office_dmx_w3','light.office_dmx_w4'],
+                'Side A (W1/W2)': ['light.office_dmx_w1','light.office_dmx_w2'],
+                'Side B (W3/W4)': ['light.office_dmx_w3','light.office_dmx_w4']}.get(states('input_select.lightesota_wash_scope'), []) }}
+          palette: "{{ states('input_select.lightesota_music_palette') }}"
+      - condition: template
+        value_template: "{{ selected | count > 0 and palette in ['Music6', 'Music32'] }}"
+      - action: light.turn_on
+        target:
+          entity_id: "{{ selected }}"
+        data:
+          effect: "{{ palette }}"
+          brightness: 38
+  lightesota_guarded_duo:
+    alias: Apply guarded Cyan Fan + Magenta Wave
+    mode: single
+    sequence:
+      - condition: state
+        entity_id: switch.lightesota_operator_laser_arm
+        state: "on"
+      - action: light.turn_on
+        target:
+          entity_id: light.office_laser_1_preset
+        data:
+          effect: Fan cyan
+      - action: light.turn_on
+        target:
+          entity_id: light.office_laser_2_preset
+        data:
+          effect: Wave magenta
+  lightesota_stop:
+    alias: Stop lighting / All Off
+    mode: restart
+    sequence:
+      - action: button.press
+        target:
+          entity_id: button.lightesota_stop_lighting_all_off
+  lightesota_take_manual:
+    alias: Take manual control
+    mode: restart
+    sequence:
+      - action: button.press
+        target:
+          entity_id: button.lightesota_take_manual_control

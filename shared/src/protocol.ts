@@ -1,3 +1,4 @@
+import type { WashPatch, QuickLookId, CoordinatedShowParams } from "./control.js";
 import type { LaserState } from "./laser.js";
 import type {
   AudioFrame, DeviceInfo, FixtureOverride, FrameColor, OutputStatus, ParamValues, Pattern, PatternMeta, Playlist,
@@ -28,7 +29,13 @@ export type ServerMessage =
   | { type: "ack"; reqId: string; result?: unknown };
 
 /** Messages clients send. `reqId` is echoed back in ack/error. */
-export type ClientMessage =
+export type ClientMessage = ({ generation?: number } & (
+  | { type: "stopLighting" }
+  | { type: "takeManualControl"; fixtureIds?: string[] }
+  | { type: "setWash"; fixtureIds: string[]; patch: WashPatch }
+  | { type: "releaseWashes"; fixtureIds: string[] }
+  | { type: "quickLook"; lookId: QuickLookId; fixtureIds?: string[] }
+  | { type: "startCoordinatedShow"; params: CoordinatedShowParams }
   | { type: "ping"; t: number }
   | { type: "setName"; name: string }
   | { type: "setPattern"; patternId: string | null; params?: ParamValues; crossfadeMs?: number }
@@ -46,10 +53,12 @@ export type ClientMessage =
   | { type: "setSolo"; fixtureIds: string[] }
   /** Arm/disarm the lasers (admin). */
   | { type: "armLasers"; armed: boolean }
-  /** Change one laser's preset (admin). Partial; invalid values are ignored. */
+  /** Change one laser's preset (admin). Partial; invalid values return an error. */
   | { type: "setLaser"; fixtureId: string; state: Partial<LaserState> }
   /** Apply a named look to all enabled lasers, or null to stop it and keep the current states (admin). */
   | { type: "setLaserLook"; lookId: string | null }
+  /** Explicit operator authorization for the currently loaded pattern source. */
+  | { type: "followPatternLasers"; patternId: string; revision: number }
   /** Everything off and disarmed. Anyone with control can do this. */
   | { type: "lasersOff" }
   /** Hazer (admin): arm/disarm, set levels, start a timed run (seconds) or stop it (runSec 0). */
@@ -83,12 +92,15 @@ export type ClientMessage =
   | { type: "setFollowMicBpm"; on: boolean }
   | { type: "setSleep"; minutes: number | null }
   | { type: "listDevices" }
-  | { type: "forgetDevice"; deviceId: string };
+  | { type: "forgetDevice"; deviceId: string }));
 
 export function requiredRole(msg: ClientMessage): Role {
   switch (msg.type) {
     case "ping": case "setName": case "getPattern": case "subscribeDmx":
       return "viewer";
+    case "stopLighting": case "takeManualControl": case "setWash": case "releaseWashes":
+    case "startCoordinatedShow": return msg.type === "startCoordinatedShow" && msg.params?.includeLasers ? "admin" : "guest";
+    case "quickLook": return msg.lookId === "laser-duo" ? "admin" : "guest";
     case "setPattern": case "setParams": case "setMaster": case "setBlackout": case "setSpeed":
     case "setCrossfade": case "setBpm": case "tap": case "resync": case "nudge":
     case "setOverride": case "clearOverrides": case "setSolo": case "recallScene":

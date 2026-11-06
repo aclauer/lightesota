@@ -66,8 +66,8 @@ export function PatternsView() {
 
 function PatternCard({ p, active, onActivate, onEdit, disabled }: { p: PatternMeta; active: boolean; onActivate: () => void; onEdit?: () => void; disabled: boolean }) {
   return (
-    <div className={`pcard ${active ? "active" : ""}`} onClick={() => !disabled && !p.error && onActivate()} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && !disabled && onActivate()} aria-pressed={active}>
-      <div className="name"><span>{p.name}</span><span className="row" style={{ gap: 4 }}>{p.usesLasers && <span className="pill danger" title="Uses the lasers (when armed)">LASER</span>}{p.usesBeat && <span className="pill accent" title="Follows the BPM">BPM</span>}</span></div>
+    <div className={`pcard ${active ? "active" : ""}`} onClick={() => !disabled && !p.error && onActivate()} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && !disabled && !p.error && onActivate()} aria-pressed={active} aria-disabled={disabled || !!p.error}>
+      <div className="name"><span>{p.name}</span><span className="row" style={{ gap: 4 }}>{p.usesLasers && <span className="pill danger" title="Laser layer requires operator arm and Follow on the Live tab">LASER</span>}{p.usesBeat && <span className="pill accent" title="Follows the BPM">BPM</span>}</span></div>
       <div className="swatches">{(p.swatch?.length ? p.swatch : ["#222"]).map((c, i) => <i key={i} style={{ background: c }} />)}</div>
       <div className="desc">{p.error ? <span style={{ color: "var(--danger)" }}>Error: {p.error}</span> : p.description}</div>
       <div className="row" style={{ justifyContent: "space-between" }}>
@@ -104,18 +104,24 @@ function PatternEditor({ patternId }: { patternId: string }) {
   useEffect(() => {
     if (isNew) { setSource(TEMPLATE); setLoadedId(""); dirty.current = false; return; }
     if (loadedId === patternId) return;
-    loadPattern(patternId).then((p: Pattern) => { setSource(p.source); setLoadedId(patternId); dirty.current = false; setError(p.error ?? null); }).catch((e: Error) => toast("error", e.message));
+    let current = true;
+    loadPattern(patternId).then((p: Pattern) => { if (!current) return; setSource(p.source); setLoadedId(patternId); dirty.current = false; setError(p.error ?? null); }).catch((e: Error) => { if (current) toast("error", e.message); });
+    return () => { current = false; };
   }, [patternId, isNew, loadedId, loadPattern, toast]);
 
   const live = show.patternId === patternId;
   const save = async (andApply: boolean) => {
     if (source === null) return;
+    const generation = show.generation;
     setSaving(true); setError(null);
     try {
       const id = await request<string>({ type: "savePattern", pattern: { id: isNew ? undefined : patternId, source } });
       dirty.current = false;
       if (id !== patternId) openEditor(id);
-      if (andApply) send({ type: "setPattern", patternId: id, crossfadeMs: 300 });
+      if (andApply && (!live || id !== patternId)) {
+        if (useStore.getState().show?.generation === generation) send({ type: "setPattern", patternId: id, crossfadeMs: 300, generation });
+        else toast("warning", "Saved without applying because lighting control changed. Choose Make live to apply it.");
+      }
       toast("success", meta?.builtin ? "Saved as a new pattern (built-ins are read-only)" : "Saved");
     } catch (e) { setError((e as Error).message); }
     finally { setSaving(false); }

@@ -1,6 +1,6 @@
 export default {
   name: "Party Mode",
-  description: "Palette hits on every beat, pinspots alternate on the off-beats, a strobe burst on bar 4.",
+  description: "Palette hits on every beat; an optional strobe burst on bar 4 is off by default.",
   tags: ["party", "beat"],
   // Lasers: fans snapping to the palette color of the beat, spread flipping tight/wide every bar.
   lasers(ctx) {
@@ -13,7 +13,7 @@ export default {
     palette: { type: "palette", default: PALETTES.neon, label: "Palette" },
     decay: { type: "number", default: 5, min: 1, max: 20, step: 0.5, label: "Hit decay", group: "Timing" },
     movement: { type: "number", default: 0.5, min: 0, max: 1, step: 0.01, label: "Movement across room" },
-    burst: { type: "boolean", default: true, label: "Strobe burst on every 4th bar" },
+    burst: { type: "boolean", default: false, label: "Strobe burst on every 4th bar (opt in)" },
     floor: { type: "number", default: 0.1, min: 0, max: 1, step: 0.01, label: "Floor level" },
   },
   render(ctx) {

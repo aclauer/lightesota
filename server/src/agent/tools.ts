@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import {
-  engineFixtures, findProfile, laserFixtures, laserIsOn, roleAllows, LASER_LOOKS, LASER_COLORS, LASER_PATTERNS, LASER_MUSIC_COLORS, LASER_PAN_MIN, LASER_PAN_MAX,
+  engineFixtures, findProfile, findLaserLook, laserFixtures, laserIsOn, roleAllows, LASER_LOOKS, LASER_COLORS, LASER_PATTERNS, LASER_MUSIC_COLORS, LASER_PAN_MIN, LASER_PAN_MAX,
   type LaserState, type ParamValues, type Rig, type Role, type Settings,
 } from "../../../shared/src/index.js";
 import type { Library } from "../library.js";
@@ -12,7 +12,7 @@ export interface AgentHost {
   getRig: () => Rig;
   getSettings: () => Settings;
   /** Called after a pattern is saved so live clients refresh and a live pattern reloads. */
-  onPatternSaved: (id: string) => void;
+  onPatternSaved: (id: string, applyLive?: boolean) => void;
 }
 
 /** Who is talking to the agent on this turn; gates the laser tools. */
@@ -107,13 +107,13 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "get_lasers",
-    description: "Laser status: armed or not, each laser's current preset, and the list of available looks. Lasers are operator-only fixtures with a fixed preset vocabulary; patterns cannot drive them.",
+    description: "Laser status: armed or not, each laser's current preset, and the list of available looks. Typed pattern laser output requires explicit operator Follow authorization for the current pattern source.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
     strict: true,
   },
   {
     name: "set_lasers",
-    description: "Turn the lasers on with a look or per-laser presets (arms them if needed). Only works when the person asking is an admin. Use look for a named combination, or lasers for per-laser settings; pass null for the one you are not using.",
+    description: "Control already armed lasers with a look or per-laser presets. Requires an admin, a running show and no blackout. This tool never arms lasers, restarts stopped lighting or clears blackout. Use exactly one of look or lasers; pass null for the other.",
     input_schema: {
       type: "object",
       properties: {
@@ -127,7 +127,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "lasers_off",
-    description: "Turn every laser off and disarm them. Anyone may do this.",
+    description: "Turn every laser off and disarm them. Any control role (guest, editor or admin) may do this, including after the turn has become stale.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
     strict: true,
   },
@@ -141,8 +141,22 @@ const obj = (v: unknown, name: string): Record<string, unknown> => {
   return v as Record<string, unknown>;
 };
 
+/** Keep the turn's authority across all provider iterations; never renew it after a tool call. */
+export function createTurnToolRunner(host: AgentHost, caller: ToolCaller = { role: "viewer", by: "" }) {
+  const generation = host.show.state.generation;
+  const identity = { ...caller };
+  return (name: string, input: unknown) => runTool(host, name, input, identity, generation);
+}
+
 /** Execute a tool call. Throws on invalid input or failure; the caller turns that into an error result. */
-export function runTool(host: AgentHost, name: string, rawInput: unknown, caller: ToolCaller = { role: "admin", by: "" }): string {
+export function runTool(host: AgentHost, name: string, rawInput: unknown, caller: ToolCaller = { role: "viewer", by: "" }, generation = host.show.state.generation): string {
+  if ((name === "write_pattern" || name === "save_scene") && !roleAllows(caller.role, "guest")) throw new Error("A control role is required to save agent work");
+  const changesOutput = ["apply_pattern", "set_params", "set_bpm", "set_master", "set_lasers"].includes(name);
+  if (changesOutput) {
+    if (!roleAllows(caller.role, "guest")) throw new Error("A control role is required to change the live show");
+    host.show.assertGeneration(generation);
+    if (!host.getSettings().agent.allowApply) throw new Error("Changing the live show from the agent is disabled in settings");
+  }
   const input = (typeof rawInput === "object" && rawInput !== null ? rawInput : {}) as Record<string, unknown>;
   switch (name) {
     case "get_rig": {
@@ -157,10 +171,10 @@ export function runTool(host: AgentHost, name: string, rawInput: unknown, caller
     }
     case "get_show_state": {
       const s = host.show.state;
-      return JSON.stringify({ patternId: s.patternId, params: s.params, bpm: s.transport.bpm, master: s.master, blackout: s.blackout, speed: s.speed, activeSceneId: s.activeSceneId });
+      return JSON.stringify({ patternId: s.patternId, params: s.params, bpm: s.transport.bpm, master: s.master, blackout: s.blackout, stopped: s.stopped, released: s.released, generation: s.generation, speed: s.speed, activeSceneId: s.activeSceneId });
     }
     case "list_patterns":
-      return JSON.stringify(host.library.listPatterns().map((p) => ({ id: p.id, name: p.name, description: p.description, tags: p.tags, usesBeat: p.usesBeat, builtin: p.builtin, params: Object.keys(p.params), error: p.error })));
+      return JSON.stringify(host.library.listPatterns().map((p) => ({ id: p.id, name: p.name, description: p.description, tags: p.tags, usesBeat: p.usesBeat, builtin: p.builtin, params: Object.keys(p.params), error: p.error, usesLasers: p.usesLasers })));
     case "read_pattern": {
       const p = host.library.getPattern(str(input.id, "id"));
       if (!p) throw new Error(`No pattern with id ${String(input.id)}`);
@@ -169,8 +183,11 @@ export function runTool(host: AgentHost, name: string, rawInput: unknown, caller
     case "write_pattern": {
       const source = str(input.source, "source");
       const id = input.id == null ? undefined : str(input.id, "id");
+      // Saving current source invalidates laser ownership synchronously. Decide whether the wash
+      // reload was authorized before that invalidation, without renewing the rest of this turn.
+      const applyLive = generation === host.show.state.generation && host.getSettings().agent.allowApply;
       const saved = host.library.savePattern({ id, source });
-      host.onPatternSaved(saved.id);
+      host.onPatternSaved(saved.id, applyLive);
       return JSON.stringify({ ok: true, id: saved.id, name: saved.name, params: saved.params, usesBeat: saved.usesBeat, swatch: saved.swatch, note: id && id !== saved.id ? "built-in was copied to a new user pattern" : undefined });
     }
     case "apply_pattern": {
@@ -201,35 +218,59 @@ export function runTool(host: AgentHost, name: string, rawInput: unknown, caller
       const rig = host.getRig(); const L = host.show.state.lasers;
       return JSON.stringify({
         armed: L.armed, armedBy: L.armedBy, look: L.look, lookNote: L.look === "pattern" ? "the live pattern's lasers() is driving them" : undefined, blackout: host.show.state.blackout,
+        stopped: host.show.state.stopped, released: host.show.state.released,
         callerMayControl: roleAllows(caller.role, "admin"),
-        lasers: laserFixtures(rig).map((f) => ({ id: f.id, name: f.name, on: laserIsOn(L.fixtures[f.id], L.armed, host.show.state.blackout), ...(L.fixtures[f.id] ?? {}) })),
+        canApplyNow: roleAllows(caller.role, "admin") && host.getSettings().agent.allowApply && L.armed && !host.show.state.blackout && !host.show.state.stopped && !host.show.state.released,
+        lasers: laserFixtures(rig).map((f) => ({ id: f.id, name: f.name, on: laserIsOn(L.fixtures[f.id], L.armed, host.show.state.blackout || host.show.state.stopped || host.show.state.released), ...(L.fixtures[f.id] ?? {}) })),
         looks: LASER_LOOKS.map((l) => ({ id: l.id, name: l.name, description: l.description, animated: l.animated })),
         vocabulary: { patterns: LASER_PATTERNS, colors: LASER_COLORS, musicColors: LASER_MUSIC_COLORS, pan: [LASER_PAN_MIN, LASER_PAN_MAX], note: "pan is the spread of the unit's two mirrored fans (low = together, high = apart), not a direction; tilt, zoom and strobe are fixed by the operator and cannot be changed" },
       });
     }
     case "set_lasers": {
-      if (!roleAllows(caller.role, "admin")) throw new Error(`Only an admin can turn the lasers on${caller.by ? ` (${caller.by} is not one)` : ""}. Anyone can turn them off with lasers_off.`);
-      if (!host.getSettings().agent.allowApply) throw new Error("Changing the live show from the agent is disabled in settings");
-      const rig = host.getRig();
-      if (laserFixtures(rig).length === 0) throw new Error("No enabled laser fixtures in the rig");
-      if (host.show.state.blackout) host.show.setBlackout(false);
-      if (!host.show.state.lasers.armed) host.show.armLasers(true, caller.by ? `${caller.by} via agent` : "agent");
-      const look = input.look == null ? null : str(input.look, "look");
-      if (look) host.show.setLaserLook(look);
-      if (input.lasers != null) {
-        const list = typeof input.lasers === "string" ? JSON.parse(input.lasers) : input.lasers;
-        if (!Array.isArray(list)) throw new Error("lasers must be a JSON array");
+      if (!roleAllows(caller.role, "admin")) throw new Error(`Only an admin can control the lasers${caller.by ? ` (${caller.by} is not one)` : ""}. Use lasers_off to turn them off.`);
+      const command = obj(rawInput, "set_lasers");
+      if (Object.keys(command).some((key) => key !== "look" && key !== "lasers")) throw new Error("Unknown set_lasers field");
+      const hasLook = command.look != null, hasLasers = command.lasers != null;
+      if (hasLook === hasLasers) throw new Error("Give exactly one look or lasers array");
+      const fixtures = laserFixtures(host.getRig());
+      if (fixtures.length === 0) throw new Error("No enabled laser fixtures in the rig");
+      const look = hasLook ? str(command.look, "look") : null;
+      if (look !== null && !findLaserLook(look)) throw new Error(`Unknown laser look ${look}`);
+      const patches: { id: string; patch: Partial<LaserState> }[] = [];
+      if (hasLasers) {
+        let list: unknown = command.lasers;
+        if (typeof list === "string") {
+          try { list = JSON.parse(list); } catch { throw new Error("lasers must be a JSON array"); }
+        }
+        if (!Array.isArray(list) || list.length === 0 || list.length > fixtures.length) throw new Error("lasers must be a nonempty array of enabled laser fixtures");
+        const seen = new Set<string>();
         for (const item of list) {
-          const o = obj(item, "laser");
+          if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("laser must be an object");
+          const o = item as Record<string, unknown>;
+          if (Object.keys(o).some((key) => !["id", "mode", "pattern", "color", "pan", "musicColor"].includes(key))) throw new Error("Unknown laser field");
           const id = str(o.id, "laser.id");
+          if (!fixtures.some((fixture) => fixture.id === id)) throw new Error(`Not an enabled laser fixture: ${id}`);
+          if (seen.has(id)) throw new Error(`Duplicate laser fixture: ${id}`);
+          seen.add(id);
+          for (const [key, allowed] of [["mode", ["off", "manual", "music"]], ["pattern", LASER_PATTERNS], ["color", LASER_COLORS], ["musicColor", LASER_MUSIC_COLORS]] as const) {
+            if (key in o && !(allowed as readonly unknown[]).includes(o[key])) throw new Error(`Invalid laser ${key}`);
+          }
+          if ("pan" in o && (typeof o.pan !== "number" || !Number.isInteger(o.pan) || o.pan < LASER_PAN_MIN || o.pan > LASER_PAN_MAX)) throw new Error(`laser pan must be an integer in ${LASER_PAN_MIN}..${LASER_PAN_MAX}`);
           const { id: _id, ...patch } = o;
-          host.show.setLaser(id, patch as Partial<LaserState>);
+          patches.push({ id, patch: patch as Partial<LaserState> });
         }
       }
-      if (!look && input.lasers == null) throw new Error("Give a look or a lasers array");
-      return runTool(host, "get_lasers", {}, caller);
+      // The whole command is valid before any ownership or fixture state changes occur.
+      if (!host.show.state.lasers.armed) throw new Error("An operator must explicitly arm lasers first");
+      if (host.show.state.stopped) throw new Error("Lighting is stopped; an operator must explicitly Start first");
+      if (host.show.state.blackout) throw new Error("Blackout is active; this tool cannot clear it");
+      if (host.show.state.released) throw new Error("Output is released; this tool cannot take output control");
+      if (look !== null) host.show.setLaserLook(look);
+      else for (const { id, patch } of patches) host.show.setLaser(id, patch);
+      return runTool(host, "get_lasers", {}, caller, generation);
     }
     case "lasers_off":
+      if (!roleAllows(caller.role, "guest")) throw new Error("A control role is required to turn lasers off");
       host.show.lasersOff(caller.by ? `${caller.by} via agent` : "agent");
       return JSON.stringify({ ok: true, armed: false });
     default:

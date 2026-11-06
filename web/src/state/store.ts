@@ -5,7 +5,8 @@ import type {
 } from "@lightesota/shared";
 import { roleAllows } from "@lightesota/shared";
 import { WsClient, wsUrl } from "../lib/ws";
-import { AudioAnalyzer } from "../lib/audio";
+import { ControlQueue, isImmediateStop, isQueuedControl } from "../lib/control-queue";
+import { AudioAnalyzer, microphoneUnavailable } from "../lib/audio";
 import { applyTheme, readThemePref, type ThemePref } from "../lib/theme";
 
 export type View = "live" | "patterns" | "scenes" | "playlists" | "stage" | "agent" | "settings";
@@ -67,12 +68,18 @@ let toastSeq = 1;
 
 export const useStore = create<AppState>((set, get) => {
   const ws = new WsClient(wsUrl());
+  const controls = new ControlQueue((msg) => ws.request(msg), () => get().show?.generation);
   const analyzer = new AudioAnalyzer();
+  const micUnavailable = microphoneUnavailable(window.isSecureContext, !!navigator.mediaDevices?.getUserMedia);
   let lastMicUi = 0;
   analyzer.onFrame = (f) => {
-    ws.send({ type: "audio", frame: f });
+    ws.send(withGeneration({ type: "audio", frame: f }, get().show?.generation));
     const now = performance.now();
     if (now - lastMicUi > 100 || f.onset) { lastMicUi = now; set((s) => ({ mic: { ...s.mic, level: f.level, bpm: f.bpm } })); }
+  };
+  analyzer.onStop = (reason) => {
+    ws.send({ type: "audio", frame: null });
+    set((s) => ({ mic: { ...s.mic, running: false, level: 0, bpm: null, error: reason } }));
   };
   const initialTheme = readThemePref();
   applyTheme(initialTheme);
@@ -155,7 +162,14 @@ export const useStore = create<AppState>((set, get) => {
   };
 
   ws.subscribe(onMessage);
-  ws.onStatus = (connected) => set({ connected });
+  ws.onStatus = (connected) => {
+    set({ connected });
+    if (!connected) {
+      controls.cancel("Disconnected: command result is unknown. Refresh state before retrying.");
+      analyzer.stop();
+      set((s) => ({ mic: { ...s.mic, running: false, level: 0, bpm: null }, show: s.show ? { ...s.show, audio: { ...s.show.audio, active: false, level: 0, bpm: null, source: null } } : null }));
+    }
+  };
   ws.connect();
 
   const hashView = location.hash.replace("#", "") as View;
@@ -169,20 +183,36 @@ export const useStore = create<AppState>((set, get) => {
     theme: initialTheme,
     selectedFixtureId: null, editorPatternId: null,
     agent: { conversations: [], current: null, busy: {}, all: false },
-    mic: { running: false, level: 0, bpm: null, error: null, supported: typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia },
+    mic: { running: false, level: 0, bpm: null, error: micUnavailable, supported: !micUnavailable },
 
     startMic: async () => {
       try {
         await analyzer.start();
-        set((s) => ({ mic: { ...s.mic, running: true, error: null } }));
+        set((s) => ({ mic: { ...s.mic, running: analyzer.running, error: null } }));
       } catch (e) {
-        const msg = (e as Error).name === "NotAllowedError" ? "Microphone access was denied." : location.protocol !== "https:" && location.hostname !== "localhost" ? "Browsers only allow the microphone on https or localhost. Open the console on this machine, or serve it over https." : (e as Error).message;
+        const msg = (e as Error).name === "NotAllowedError" ? "Microphone access was denied. Allow microphone access in your browser's site settings to try again." : micUnavailable ?? (e as Error).message;
         set((s) => ({ mic: { ...s.mic, running: false, error: msg } }));
       }
     },
     stopMic: () => { analyzer.stop(); ws.send({ type: "audio", frame: null }); set((s) => ({ mic: { ...s.mic, running: false, level: 0, bpm: null } })); },
-    send: (msg) => ws.send(msg),
-    request: (msg) => ws.request(msg),
+    send: (msg) => {
+      if (!ws.connected) { get().toast("error", "Disconnected: command was not sent. Reconnect before controlling lighting."); return; }
+      if (isImmediateStop(msg)) {
+        controls.cancel("Pending controls canceled by Stop, mute, release or disarm.");
+        ws.send(withGeneration(msg, get().show?.generation));
+      } else if (isQueuedControl(msg)) {
+        void controls.enqueue(msg).catch((error: Error) => {
+          if (error.message === "Pending controls canceled by Stop, mute, release or disarm.") return;
+          if (get().toasts.at(-1)?.text !== error.message) get().toast("error", error.message);
+        });
+      } else ws.send(withGeneration(msg, get().show?.generation));
+    },
+    request: <T,>(msg: ClientMessage): Promise<T> => {
+      if (isImmediateStop(msg)) controls.cancel("Pending controls canceled by Stop, mute, release or disarm.");
+      return isQueuedControl(msg) && !isImmediateStop(msg)
+        ? controls.enqueue(msg) as Promise<T>
+        : ws.request<T>(withGeneration(msg, get().show?.generation));
+    },
     can: (role) => roleAllows(get().role, role),
     setView: (view) => { set({ view }); history.replaceState(null, "", `#${view}`); },
     setTheme: (theme) => { applyTheme(theme); set({ theme }); },
@@ -205,6 +235,11 @@ export const useStore = create<AppState>((set, get) => {
     setMyName: (name) => { set({ myName: name }); safeSet("lt-name", name); ws.send({ type: "setName", name }); },
   };
 });
+
+function withGeneration(msg: ClientMessage, generation: number | undefined): ClientMessage {
+  if (msg.generation !== undefined || generation === undefined || (msg.type === "audio" && msg.frame === null) || ["ping", "setName", "getPattern", "subscribeDmx", "listDevices", "stopLighting", "lasersOff"].includes(msg.type)) return msg;
+  return { ...msg, generation };
+}
 
 function pruneCache(cache: Record<string, Pattern>, metas: PatternMeta[]) {
   const out: Record<string, Pattern> = {};

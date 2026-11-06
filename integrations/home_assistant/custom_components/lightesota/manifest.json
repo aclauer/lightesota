@@ -1,0 +1,10 @@
+{
+  "domain": "lightesota",
+  "name": "Lightesota",
+  "version": "0.1.0",
+  "documentation": "https://github.com/aclauer/lightesota/tree/main/integrations/home_assistant",
+  "codeowners": [],
+  "dependencies": [],
+  "requirements": [],
+  "iot_class": "local_polling"
+}

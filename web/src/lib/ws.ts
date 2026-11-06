@@ -49,6 +49,8 @@ export class WsClient {
       this.connected = false;
       this.ws = null;
       if (this.pingTimer) clearInterval(this.pingTimer);
+      for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error("Disconnected: command result is unknown. Refresh state before retrying.")); }
+      this.pending.clear();
       this.onStatus?.(false);
       setTimeout(() => this.connect(), this.backoff);
       this.backoff = Math.min(8000, this.backoff * 1.7);
@@ -66,6 +68,7 @@ export class WsClient {
 
   /** Send a message that carries a reqId and resolve with the ack result. */
   request<T = unknown>(msg: ClientMessage & { reqId?: string }): Promise<T> {
+    if (!this.connected || this.ws?.readyState !== WebSocket.OPEN) return Promise.reject(new Error("Disconnected: command was not sent."));
     const reqId = `r${++this.reqCounter}`;
     return new Promise<T>((resolve, reject) => {
       const timer = window.setTimeout(() => { this.pending.delete(reqId); reject(new Error("Request timed out")); }, 15000);

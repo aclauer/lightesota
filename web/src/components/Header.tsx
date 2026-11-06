@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Moon, Power, Share2, Sun, SunMoon, Users } from "lucide-react";
+import { AlertTriangle, Moon, Power, Share2, Square, Sun, SunMoon, Users } from "lucide-react";
 import { useStore } from "../state/store";
 import { ShareModal } from "./ShareModal";
 import { PresenceModal } from "./PresenceModal";
@@ -15,7 +15,7 @@ export function Header() {
   const presence = useStore((s) => s.presence);
   const [share, setShare] = useState(false);
   const [people, setPeople] = useState(false);
-  const control = can("guest");
+  const control = can("guest") && connected;
 
   const nextTheme = theme === "system" ? "dark" : theme === "dark" ? "light" : "system";
   const ThemeIcon = theme === "dark" ? Moon : theme === "light" ? Sun : SunMoon;
@@ -36,8 +36,11 @@ export function Header() {
         <input type="range" className="accent" min={0} max={1} step={0.01} value={show?.master ?? 1} disabled={!control}
           onChange={(e) => send({ type: "setMaster", master: Number(e.target.value) })} aria-label="Master intensity" />
       </div>
-      <button className={`btn blackout ${show?.blackout ? "on" : ""}`} disabled={!control} onClick={() => send({ type: "setBlackout", blackout: !show?.blackout })} title="Blackout (space)">
-        <Power /> <span className="hide-mobile">{show?.blackout ? "BLACKOUT" : "Blackout"}</span>
+      <button className="btn danger stop-lighting" disabled={!control} onClick={() => send({ type: "stopLighting" })} title="All Off: cancel lighting automation and disarm lasers. New Start required." aria-label="Stop lighting / All Off">
+        <Square /> Stop<span className="hide-mobile">lighting</span>
+      </button>
+      <button className={`btn blackout ${show?.blackout ? "on" : ""}`} disabled={!control} onClick={() => send({ type: "setBlackout", blackout: !show?.blackout })} title="Temporary blackout (space): mutes output; release resumes washes. Lasers need an operator restart." aria-label={show?.blackout ? "Release temporary blackout" : "Temporary blackout"}>
+        <Power /> <span className="hide-mobile">{show?.blackout ? "Muted" : "Blackout"}</span>
       </button>
       <button className="btn ghost icon presence" onClick={() => setPeople(true)} title={`${presence.length} connected`} aria-label="People">
         <Users /> <span className="tabular" style={{ fontSize: 12 }}>{presence.length}</span>
@@ -56,9 +59,10 @@ function Transport() {
   const send = useStore((s) => s.send);
   const can = useStore((s) => s.can);
   const ws = useStore((s) => s.ws);
+  const connected = useStore((s) => s.connected);
   const dotRef = useRef<HTMLSpanElement>(null);
   const drag = useRef<{ y: number; bpm: number } | null>(null);
-  const control = can("guest");
+  const control = can("guest") && connected;
 
   // Beat indicator driven by rAF, outside React state.
   useEffect(() => {
@@ -87,25 +91,25 @@ function Transport() {
     try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
   };
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!drag.current) return;
+    if (!control || !drag.current) return;
     const d = drag.current.y - e.clientY;
-    send({ type: "setBpm", bpm: Math.round((drag.current.bpm + d * 0.25) * 2) / 2 });
+    send({ type: "setBpm", bpm: Math.max(20, Math.min(300, Math.round((drag.current.bpm + d * 0.25) * 2) / 2)) });
   };
   const onPointerUp = () => { drag.current = null; };
 
   return (
     <div className="transport" aria-label="Transport">
-      <div className="bpm" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} title="Drag up/down to change BPM" onDoubleClick={() => {
+      <div className="bpm" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onLostPointerCapture={onPointerUp} title="Drag up/down to change BPM (20–300)" onDoubleClick={() => {
         const v = window.prompt("BPM", String(bpm));
-        if (v && control) send({ type: "setBpm", bpm: Number(v) });
+        if (v && control && Number.isFinite(Number(v))) send({ type: "setBpm", bpm: Math.max(20, Math.min(300, Number(v))) });
       }}>
         <b>{bpm.toFixed(bpm % 1 ? 1 : 0)}</b><span>BPM</span>
       </div>
       <span ref={dotRef} className="beat-dot" />
       <button className="btn sm" disabled={!control} onClick={() => send({ type: "tap" })} title="Tap tempo (T)">Tap</button>
       <button className="btn sm ghost hide-mobile" disabled={!control} onClick={() => send({ type: "resync" })} title="Restart the beat grid (R)">Sync</button>
-      <button className="btn sm ghost hide-mobile" disabled={!control} onClick={() => send({ type: "setBpm", bpm: bpm / 2 })} title="Half tempo">½</button>
-      <button className="btn sm ghost hide-mobile" disabled={!control} onClick={() => send({ type: "setBpm", bpm: bpm * 2 })} title="Double tempo">×2</button>
+      <button className="btn sm ghost hide-mobile" disabled={!control || bpm / 2 < 20} onClick={() => send({ type: "setBpm", bpm: bpm / 2 })} title="Half tempo">½</button>
+      <button className="btn sm ghost hide-mobile" disabled={!control || bpm * 2 > 300} onClick={() => send({ type: "setBpm", bpm: bpm * 2 })} title="Double tempo">×2</button>
     </div>
   );
 }

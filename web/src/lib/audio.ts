@@ -4,6 +4,13 @@
  */
 export interface AudioFrame { level: number; bass: number; mid: number; high: number; onset: boolean; bpm: number | null; }
 
+/** Explain unavailable browser APIs before the user reaches a disabled microphone button. */
+export function microphoneUnavailable(secure: boolean, hasMediaDevices: boolean): string | null {
+  if (!secure) return "Browser microphone requires HTTPS or localhost. Plain HTTP on a LAN address cannot request microphone access; open the HTTPS address configured for this server.";
+  if (!hasMediaDevices) return "This browser does not provide microphone capture. Use a supported browser over HTTPS, fixture microphones, or the shared BPM clock.";
+  return null;
+}
+
 export class AudioAnalyzer {
   private ctx: AudioContext | null = null;
   private stream: MediaStream | null = null;
@@ -16,35 +23,61 @@ export class AudioAnalyzer {
   private lastOnset = 0;
   private lastSend = 0;
   private smoothLevel = 0;
+  private session = 0;
   running = false;
   bpm: number | null = null;
   onFrame: ((f: AudioFrame) => void) | null = null;
+  onStop: ((reason: string) => void) | null = null;
   sensitivity = 1.4;
 
   async start() {
     if (this.running) return;
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-    const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    this.ctx = new AC();
-    await this.ctx.resume();
-    const src = this.ctx.createMediaStreamSource(this.stream);
-    this.analyser = this.ctx.createAnalyser();
-    this.analyser.fftSize = 1024;
-    this.analyser.smoothingTimeConstant = 0.5;
-    src.connect(this.analyser);
-    this.freq = new Uint8Array(this.analyser.frequencyBinCount);
-    this.time = new Uint8Array(this.analyser.fftSize);
-    this.running = true;
-    this.loop();
+    const unavailable = microphoneUnavailable(window.isSecureContext, !!navigator.mediaDevices?.getUserMedia);
+    if (unavailable) throw new Error(unavailable);
+    const session = ++this.session;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    if (session !== this.session) { stream.getTracks().forEach((t) => t.stop()); return; }
+    this.stream = stream;
+    try {
+      const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = new AC();
+      this.ctx = ctx;
+      await ctx.resume();
+      if (session !== this.session) return;
+      const src = ctx.createMediaStreamSource(stream);
+      this.analyser = ctx.createAnalyser();
+      this.analyser.fftSize = 1024;
+      this.analyser.smoothingTimeConstant = 0.5;
+      src.connect(this.analyser);
+      this.freq = new Uint8Array(this.analyser.frequencyBinCount);
+      this.time = new Uint8Array(this.analyser.fftSize);
+      const lost = () => {
+        if (session !== this.session) return;
+        this.stop();
+        this.onStop?.("Browser microphone disconnected or muted. Shared BPM clock is available; start listening again when ready.");
+      };
+      for (const track of stream.getAudioTracks()) {
+        track.addEventListener("ended", lost, { once: true });
+        track.addEventListener("mute", lost, { once: true });
+      }
+      ctx.addEventListener("statechange", () => { if (this.running && ctx.state !== "running") lost(); });
+      this.running = true;
+      this.loop();
+    } catch (error) {
+      if (session === this.session) this.stop();
+      throw error;
+    }
   }
 
   stop() {
+    this.session++;
     this.running = false;
     cancelAnimationFrame(this.raf);
     this.stream?.getTracks().forEach((t) => t.stop());
     void this.ctx?.close();
     this.ctx = null; this.stream = null; this.analyser = null;
     this.history = []; this.onsets = []; this.bpm = null;
+    this.smoothLevel = 0; this.lastOnset = 0; this.lastSend = 0;
   }
 
   private loop = () => {
@@ -68,6 +101,8 @@ export class AudioAnalyzer {
     this.history.push(e); if (this.history.length > 43) this.history.shift();
     const avg = this.history.reduce((x, y) => x + y, 0) / this.history.length;
     const now = performance.now();
+    // A tempo estimate is evidence of recent onsets, never a permanently latched value.
+    if (now - this.lastOnset > 3000) { this.bpm = null; this.onsets = []; }
     let onset = false;
     if (this.history.length > 20 && e > avg * this.sensitivity && e > 0.02 && now - this.lastOnset > 250) {
       onset = true; this.lastOnset = now;

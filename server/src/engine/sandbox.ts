@@ -151,8 +151,9 @@ export function compilePattern(source: string, opts: CompileOptions = {}): Compi
     ctxAny.__invoke_out = undefined;
     try {
       invokeValueScript.runInContext(context, { timeout: timeoutMs });
-      // Copy out of the vm realm as plain data.
-      return JSON.parse(JSON.stringify(ctxAny.__invoke_out ?? null));
+      // Copy out of the vm realm without silently dropping malformed undefined fields.
+      // Non-data values fail cloning and therefore clear laser output.
+      return structuredClone(ctxAny.__invoke_out ?? null);
     } finally {
       ctxAny.__invoke_fn = undefined;
       ctxAny.__invoke_arg = undefined;
@@ -250,7 +251,8 @@ export class PatternInstance {
   /** Evaluate the pattern's lasers() for the current ctx. Every entry is forced into the approved vocabulary. */
   lasers(): LaserState[] | null {
     const fn = this.compiled.laserFn;
-    if (!fn || this.disabled) return null;
+    if (!fn) return null;
+    if (this.disabled || this.error) return [];
     let raw: unknown;
     try {
       raw = this.compiled.invokeValue(fn, this.ctx, 50);

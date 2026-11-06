@@ -3,8 +3,8 @@ import type { FixtureProfile } from "./types.js";
 /**
  * Built-in fixture profiles.
  *
- * SlimPAR Pro H USB 12-channel values for channels 8-12 follow what was tested on the
- * office rig on 2026-11-05 (program 0 = normal, sensitivity 32, dimmer speed 52).
+ * SlimPAR Pro H USB manufacturer 12CH table. W4's hardware music mode was verified;
+ * this profile does not imply physical validation of every fixture.
  */
 export const BUILTIN_PROFILES: FixtureProfile[] = [
   {
@@ -23,10 +23,10 @@ export const BUILTIN_PROFILES: FixtureProfile[] = [
       { fn: "amber", name: "Amber" },
       { fn: "white", name: "White" },
       { fn: "uv", name: "UV" },
+      { fn: "strobe", name: "Strobe", range: [16, 255], off: 0 },
       { fn: "fixed", name: "Color macro", value: 0 },
-      { fn: "strobe", name: "Strobe", range: [11, 255], off: 0 },
       { fn: "fixed", name: "Program", value: 0 },
-      { fn: "fixed", name: "Sound sensitivity", value: 32 },
+      { fn: "fixed", name: "Sound sensitivity", value: 255 },
       { fn: "fixed", name: "Dimmer speed", value: 52 },
     ],
     notes: "Menu: 12CH. Set address with DMX unplugged. dIM = OFF.",
@@ -171,5 +171,5 @@ export function profileFootprint(p: FixtureProfile): number {
 }
 
 export function findProfile(id: string, custom: FixtureProfile[] = []): FixtureProfile | undefined {
-  return custom.find((p) => p.id === id) ?? BUILTIN_PROFILES.find((p) => p.id === id);
+  return BUILTIN_PROFILES.find((p) => p.id === id) ?? custom.find((p) => p.id === id);
 }

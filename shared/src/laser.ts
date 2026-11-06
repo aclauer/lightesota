@@ -9,6 +9,7 @@ import { findProfile } from "./profiles.js";
  * (2026-11-05): manual fan/wave at tilt 64 (the level beam, the lowest approved angle), zoom 53,
  * pan within 48..80, six fixed colors, no strobe; or the fixture's own sound-active color modes.
  * Anything else encodes as all zeros, which is the Scorpion's dark, still state.
+ * These software limits are not evidence of optical safety or installation suitability.
  */
 
 export const LASER_COLORS = ["red", "green", "blue", "yellow", "magenta", "cyan"] as const;
@@ -58,6 +59,10 @@ export interface LasersState {
   fixtures: Record<string, LaserState>;
   /** Active look id (see LASER_LOOKS) or null when lasers are set by hand. */
   look: string | null;
+  /** Current pattern metadata and explicit operator Follow ownership, for control clients. */
+  patternId?: string | null;
+  patternRevision?: number | null;
+  patternFollowing?: boolean;
 }
 
 export function defaultLaserState(): LaserState {
@@ -111,6 +116,7 @@ export function laserBytes(state: LaserState | undefined, armed: boolean, blacko
     out[0] = LASER_MUSIC_BYTE[state.musicColor] ?? 0;
     return out;
   }
+  if (state.mode !== "manual" || !LASER_PATTERNS.includes(state.pattern) || !LASER_COLORS.includes(state.color) || !Number.isFinite(state.pan)) return out;
   // manual
   const pan = Math.max(LASER_PAN_MIN, Math.min(LASER_PAN_MAX, Math.round(state.pan)));
   out[0] = 0;                                   // mode: manual
@@ -162,15 +168,17 @@ const sweep = (t: number, periodSec: number, phase = 0) => {
   const tri = u < 0.5 ? u * 2 : 2 - u * 2;
   return LASER_PAN_MIN + tri * (LASER_PAN_MAX - LASER_PAN_MIN);
 };
-const beatColor = (beat: number, offset = 0): LaserColor => LASER_COLORS[(Math.floor(beat) + offset) % LASER_COLORS.length];
+const beatColor = (beat: number, offset = 0): LaserColor => LASER_COLORS[((Math.floor(beat) + offset) % LASER_COLORS.length + LASER_COLORS.length) % LASER_COLORS.length];
 
 export const LASER_LOOKS: LaserLook[] = [
-  { id: "twin-green", name: "Twin green", description: "Both lasers: the certified green line, centered.", animated: false, at: () => manual("fan", "green") },
+  { id: "twin-green", name: "Twin green", description: "Both lasers: green fans at the middle spread.", animated: false, at: () => manual("fan", "green") },
   { id: "red-green", name: "Red / green", description: "Green on the first laser, red on the second.", animated: false, at: (_t, _b, i) => manual("fan", i % 2 ? "red" : "green") },
   { id: "tight", name: "Tight pair", description: "Both lasers with their two fans pulled close together, cyan.", animated: false, at: () => manual("fan", "cyan", LASER_PAN_MIN) },
   { id: "wide", name: "Wide pair", description: "Both lasers with their two fans spread as far apart as allowed, magenta.", animated: false, at: () => manual("fan", "magenta", LASER_PAN_MAX) },
+  { id: "cross", name: "Crossed", description: "Legacy look: cyan fans wide on the first laser, magenta fans tight on the second.", animated: false, at: (_t, _b, i) => manual("fan", i % 2 ? "magenta" : "cyan", i % 2 ? LASER_PAN_MIN : LASER_PAN_MAX) },
   { id: "waves", name: "Yellow waves", description: "Both lasers on the zigzag wave, yellow, centered.", animated: false, at: () => manual("wave", "yellow") },
   { id: "breathe", name: "Breathe", description: "Cyan waves slowly opening and closing over 16 s, both lasers together.", animated: true, at: (t) => manual("wave", "cyan", sweep(t, 16)) },
+  { id: "slow-sweep", name: "Slow sweep", description: "Legacy look: cyan wave spread opens and closes over 16 s, with the lasers in opposite phase.", animated: true, at: (t, _b, i) => manual("wave", "cyan", sweep(t, 16, i % 2 ? 0.5 : 0)) },
   { id: "scissors", name: "Scissors", description: "Green fans scissoring open and shut every 10 s, one laser opening while the other closes.", animated: true, at: (t, _b, i) => manual("fan", "green", sweep(t, 10, i % 2 ? 0.5 : 0)) },
   { id: "beat-colors", name: "Beat colors", description: "Lines step through the six colors on every beat, the second laser one color ahead.", animated: true, at: (_t, b, i) => manual("fan", beatColor(b, i)) },
   { id: "beat-waves", name: "Beat waves", description: "Waves that change color each beat and snap between narrow and wide each bar.", animated: true, at: (_t, b, i) => manual("wave", beatColor(b, i * 3), LASER_PAN_CENTER + (Math.floor(b / 4) % 2 ? 8 : -8) * (i % 2 ? -1 : 1)) },
@@ -190,12 +198,17 @@ export const LASER_LOOK_PATTERN = "pattern";
  * Nearest approved laser color to an arbitrary "#rrggbb" (or [r,g,b] 0..1). Lets a pattern reuse its
  * palette for the lasers without ever producing a color code outside the table.
  */
-export function nearestLaserColor(color: string | number[]): LaserColor {
+export function nearestLaserColor(color: string | number[]): LaserColor | "off" {
   let r = 0, g = 0, b = 0;
   if (typeof color === "string") {
-    const n = parseInt(color.replace("#", "").slice(0, 6).padEnd(6, "0"), 16);
-    if (Number.isFinite(n)) { r = ((n >> 16) & 255) / 255; g = ((n >> 8) & 255) / 255; b = (n & 255) / 255; }
-  } else if (Array.isArray(color)) { r = Number(color[0]) || 0; g = Number(color[1]) || 0; b = Number(color[2]) || 0; }
+    if (!/^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(color)) return "off";
+    const digits = color.slice(1);
+    const n = parseInt(digits.length === 3 ? [...digits].map((c) => c + c).join("") : digits, 16);
+    r = ((n >> 16) & 255) / 255; g = ((n >> 8) & 255) / 255; b = (n & 255) / 255;
+  } else if (Array.isArray(color) && color.length === 3 && color.every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1)) {
+    [r, g, b] = color;
+  } else return "off";
+  if (Math.max(r, g, b) === 0) return "off";
   const m = Math.max(r, g, b) || 1; r /= m; g /= m; b /= m; // compare hue, not brightness
   const refs: Record<LaserColor, [number, number, number]> = { red: [1, 0, 0], green: [0, 1, 0], blue: [0, 0, 1], yellow: [1, 1, 0], magenta: [1, 0, 1], cyan: [0, 1, 1] };
   let best: LaserColor = "green", bd = Infinity;
@@ -206,18 +219,32 @@ export function nearestLaserColor(color: string | number[]): LaserColor {
 /**
  * Turn whatever a pattern's lasers() returned for one laser into an approved LaserState.
  * Accepts the friendlier `spread` 0..1 (mapped onto the pan window) and `color` as a palette hex, which
- * snaps to the nearest approved color. Unknown or missing fields fall back to defaults; junk is "off".
+ * snaps to the nearest approved color. Malformed entries and raw channel fields are always "off".
  */
 export function laserStateFromPattern(input: unknown): LaserState {
-  if (input === null || input === undefined || input === false || input === "off") return { ...defaultLaserState(), mode: "off" };
+  const off = defaultLaserState();
+  if (input === null || input === undefined || input === false || input === "off") return off;
   if (typeof input === "string") {
-    // A bare approved color name means "manual fan in that color".
-    return sanitizeLaserState({ mode: "manual", color: input });
+    const color = (LASER_COLORS as readonly string[]).includes(input) ? input : nearestLaserColor(input);
+    return color === "off" ? off : sanitizeLaserState({ mode: "manual", color });
   }
-  const o = (typeof input === "object" ? input : {}) as Record<string, unknown>;
+  if (typeof input !== "object" || Array.isArray(input)) return off;
+  const o = input as Record<string, unknown>;
+  const keys = Object.keys(o);
+  const allowed = ["mode", "pattern", "color", "pan", "spread", "musicColor"];
+  if (!keys.length || keys.some((key) => !allowed.includes(key))) return off;
+  // A position alone does not express an emitting intent.
+  if (!keys.some((key) => ["mode", "pattern", "color", "musicColor"].includes(key))) return off;
+  if ("mode" in o && !["off", "manual", "music", "sound"].includes(o.mode as string)) return off;
+  if ("pattern" in o && !(LASER_PATTERNS as readonly unknown[]).includes(o.pattern)) return off;
+  if ("musicColor" in o && !(LASER_MUSIC_COLORS as readonly unknown[]).includes(o.musicColor)) return off;
+  if (["pan", "spread"].some((key) => key in o && (typeof o[key] !== "number" || !Number.isFinite(o[key])))) return off;
   const patch: Record<string, unknown> = { ...o };
-  if (typeof o.color === "string" && !(LASER_COLORS as readonly string[]).includes(o.color)) patch.color = nearestLaserColor(o.color);
-  else if (Array.isArray(o.color)) patch.color = nearestLaserColor(o.color as number[]);
+  if ("color" in o && !(LASER_COLORS as readonly unknown[]).includes(o.color)) {
+    const color = nearestLaserColor(o.color as string | number[]);
+    if (color === "off") return off;
+    patch.color = color;
+  }
   if (typeof o.spread === "number" && Number.isFinite(o.spread)) patch.pan = LASER_PAN_MIN + Math.max(0, Math.min(1, o.spread)) * (LASER_PAN_MAX - LASER_PAN_MIN);
   if (patch.mode === undefined) patch.mode = patch.musicColor !== undefined && patch.pattern === undefined ? "music" : "manual";
   if (patch.mode === "sound") patch.mode = "music";

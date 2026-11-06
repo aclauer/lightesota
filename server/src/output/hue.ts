@@ -1,10 +1,13 @@
 import type { HueLightInfo } from "../../../shared/src/index.js";
+import { requirePhysicalOutput } from "./policy.js";
 
 /** Minimal Hue Bridge v1 API client with pairing and a rate-limited color updater. */
 export class HueBridge {
   private queue = new Map<string, { xy: [number, number]; bri: number; on: boolean }>();
   private lastSent = new Map<string, { xy: [number, number]; bri: number; on: boolean; at: number }>();
   private timer: NodeJS.Timeout | null = null;
+  private epoch = 0;
+  private pending = new Set<AbortController>();
   lastError: string | undefined;
   connected = false;
   lightCount = 0;
@@ -14,6 +17,7 @@ export class HueBridge {
   private url(path: string) { return `http://${this.ip}/api/${this.username}${path}`; }
 
   async pair(): Promise<string> {
+    requirePhysicalOutput();
     const res = await fetch(`http://${this.ip}/api`, {
       method: "POST", body: JSON.stringify({ devicetype: "lightesota#server" }), signal: AbortSignal.timeout(4000),
     });
@@ -24,6 +28,7 @@ export class HueBridge {
   }
 
   async listLights(): Promise<HueLightInfo[]> {
+    requirePhysicalOutput();
     if (!this.username) throw new Error("Hue bridge is not paired yet");
     const res = await fetch(this.url("/lights"), { signal: AbortSignal.timeout(4000) });
     const body = (await res.json()) as Record<string, { name: string; type: string; state: { on: boolean; reachable: boolean } }> | Array<{ error: { description: string } }>;
@@ -37,6 +42,7 @@ export class HueBridge {
 
   /** Queue a color for a light; the flush loop sends at most rateHz commands per second. */
   setColor(lightId: string, r: number, g: number, b: number, dim: number) {
+    requirePhysicalOutput();
     const bri = Math.round(Math.max(0, Math.min(1, Math.max(r, g, b) * dim)) * 254);
     const on = bri > 0;
     const xy = rgbToXy(r, g, b);
@@ -49,9 +55,15 @@ export class HueBridge {
     this.timer = setInterval(() => void this.flushOne(), 1000 / Math.max(1, this.rateHz));
   }
 
-  stop() { if (this.timer) clearInterval(this.timer); this.timer = null; }
+  cancelPending() {
+    this.epoch++; this.queue.clear(); this.lastSent.clear();
+    for (const controller of this.pending) controller.abort();
+    this.pending.clear();
+  }
+  stop() { if (this.timer) clearInterval(this.timer); this.timer = null; this.cancelPending(); }
 
   private async flushOne() {
+    requirePhysicalOutput();
     if (!this.username) return;
     // Pick the queued light whose change is largest / oldest.
     let bestId: string | null = null, bestScore = -1;
@@ -71,18 +83,22 @@ export class HueBridge {
     const s = this.queue.get(bestId)!;
     this.queue.delete(bestId);
     const body = s.on ? { on: true, xy: s.xy, bri: s.bri, transitiontime: 1 } : { on: false, transitiontime: 1 };
+    const epoch = this.epoch;
+    const controller = new AbortController(); this.pending.add(controller);
     try {
-      const res = await fetch(this.url(`/lights/${bestId}/state`), { method: "PUT", body: JSON.stringify(body), signal: AbortSignal.timeout(2000) });
+      const res = await fetch(this.url(`/lights/${bestId}/state`), { method: "PUT", body: JSON.stringify(body), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(2000)]) });
       const out = (await res.json()) as Array<{ error?: { description: string } }>;
+      if (epoch !== this.epoch) return;
       const err = out.find((o) => o.error)?.error?.description;
       if (err) throw new Error(err);
       this.lastSent.set(bestId, { ...s, at: now });
       this.connected = true;
       this.lastError = undefined;
     } catch (e) {
+      if (epoch !== this.epoch) return;
       this.lastError = (e as Error).message;
       this.connected = false;
-    }
+    } finally { this.pending.delete(controller); }
   }
 }
 

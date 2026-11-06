@@ -13,19 +13,23 @@ import { Library } from "./library.js";
 import { OutputManager } from "./output/output.js";
 import { ShowController } from "./show.js";
 import { deepMerge, JsonFile } from "./store.js";
+import { OUTPUT_VETO, PREVIEW } from "./output/policy.js";
+import { validateRig, validateSettings } from "./api/validate.js";
 
 ensureDataDirs();
 
 const rigFile = new JsonFile<Rig>("rig.json", defaultRig);
 {
   const m = migrateRig(rigFile.get());
-  if (m.changed) { rigFile.set(m.rig); console.log("[rig] effects (lasers/hazer) added as fixtures (were protected ranges); they start disarmed"); }
+  if (m.changed) { rigFile.set(m.rig); console.log("[rig] historical fixture metadata migrated; outputs start stopped"); }
+  validateRig(rigFile.get());
 }
 const settingsFile = new JsonFile<Settings>("settings.json", defaultSettings, (raw) => deepMerge(defaultSettings(), raw));
+validateSettings(settingsFile.get());
 const library = new Library();
 library.load();
 const show = new ShowController(library, () => rigFile.get(), () => settingsFile.get());
-const output = new OutputManager(show.engine, settingsFile.get(), rigFile.get(), () => ({ lasers: show.state.lasers, haze: show.state.haze, blackout: show.state.blackout }));
+const output = new OutputManager(show.engine, settingsFile.get(), rigFile.get(), () => show.state);
 const auth = new Auth(() => settingsFile.get());
 const devices = new DeviceStore();
 
@@ -34,7 +38,7 @@ const agent = new AgentService(
   {
     library, show,
     getRig: () => rigFile.get(), getSettings: () => settingsFile.get(),
-    onPatternSaved: (id) => show.patternUpdated(id),
+    onPatternSaved: (id, applyLive) => { if (applyLive !== false) show.patternUpdated(id); },
   },
   (ev, conversationId, owner) => hub?.agentEvent(ev, conversationId, owner),
 );
@@ -61,9 +65,8 @@ server.listen(config.port, config.host, () => {
   for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
     for (const a of addrs ?? []) if (a.family === "IPv4" && !a.internal) console.log(`  LAN: http://${a.address}:${config.port}  (${name})`);
   }
-  console.log(`  Art-Net -> ${s.artnet.enabled ? `${s.artnet.host}:${s.artnet.port} universe ${s.artnet.universe} @ ${s.artnet.fps} fps` : "disabled"}`);
-  console.log(`  Admin link: http://localhost:${config.port}/join/${auth.adminToken}`);
-  console.log(`  Guest link: http://localhost:${config.port}/join/${auth.guestToken}`);
+  console.log(`  Physical outputs: ${OUTPUT_VETO ? (PREVIEW ? "PREVIEW: permanently vetoed" : "uncommissioned: vetoed") : "commissioned; commanded state is not physical feedback"}`);
+  console.log("  Authentication required. Tokens and share links are never printed in logs.");
   console.log(`  Agent credentials: ${agent.hasCredentials() ? "found" : "missing (set ANTHROPIC_API_KEY)"}`);
   console.log(`  Data dir: ${config.dataDir}\n`);
 });

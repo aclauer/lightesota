@@ -1,4 +1,6 @@
 import express from "express";
+import { machineState, machineCommand } from "./control.js";
+import { importData } from "./import.js";
 import fs from "node:fs";
 import path from "node:path";
 import { PATTERN_API_DOC } from "../../../shared/src/index.js";
@@ -35,6 +37,9 @@ export function createApp(ctx: AppContext) {
     next();
   });
 
+  app.get("/api/control/state", (req, res) => { machineState(ctx, req, res); });
+  app.post("/api/control/command", (req, res) => { machineCommand(ctx, req, res); });
+
   app.get("/api/health", (_req, res) => res.json({ ok: true, status: ctx.output.status(ctx.agent.hasCredentials()) }));
   app.get("/api/me", (req, res) => res.json({ role: ctx.auth.roleForRequest(req) }));
   app.get("/api/pattern-api.md", (_req, res) => res.type("text/markdown").send(PATTERN_API_DOC));
@@ -66,11 +71,7 @@ export function createApp(ctx: AppContext) {
   app.post("/api/import", admin, (req, res) => {
     const body = req.body ?? {};
     try {
-      if (body.rig) ctx.rigFile.set(body.rig);
-      if (Array.isArray(body.patterns)) for (const p of body.patterns) if (p?.source) ctx.library.savePattern({ id: p.id, source: p.source });
-      if (Array.isArray(body.scenes)) for (const s of body.scenes) ctx.library.upsertScene(s);
-      if (Array.isArray(body.playlists)) for (const p of body.playlists) ctx.library.upsertPlaylist(p);
-      ctx.applyConfig();
+      importData(ctx, body);
       res.json({ ok: true });
     } catch (e) { res.status(400).json({ error: (e as Error).message }); }
   });

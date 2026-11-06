@@ -140,6 +140,22 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; }
 .btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .blackout { background: var(--danger-soft); color: var(--danger); border-color: transparent; font-weight: 700; letter-spacing: 0.04em; }
 .blackout.on { background: var(--danger); color: #fff; box-shadow: 0 0 16px var(--danger); }
+.stop-lighting { border: 1px solid var(--danger) !important; flex-shrink: 0; }
+.wash-scopes, .wash-modes { display: flex; }
+.wash-scopes button, .wash-modes button { flex: 1; padding-inline: 7px; }
+.wash-fixtures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.wash-fixture { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; cursor: pointer; }
+.wash-fixture small { display: block; color: var(--fg-3); font-size: 11px; }
+.wash-rgbw { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.wash-rgbw .input { padding-inline: 6px; }
+.show-timer { display: grid; gap: 6px; padding: 10px; background: var(--accent-soft); border-radius: var(--radius-sm); }
+.show-timer small { color: var(--fg-2); }
+.washes summary { cursor: pointer; }
+@media (max-width: 460px) {
+  .hdr { gap: 4px; padding-inline: 8px; }
+  .hdr .brand > span:not(.lamp), .hdr .transport .beat-dot { display: none; }
+  .hdr .stop-lighting { padding-inline: 8px; }
+}
 
 .input, .select, textarea.input { padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); background: var(--bg); color: var(--fg); min-height: 36px; width: 100%; }
 .input:focus, .select:focus { border-color: var(--accent); outline: none; }
