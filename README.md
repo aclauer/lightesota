@@ -100,8 +100,10 @@ the app is concerned: patterns never see them, the agent has no tool for them, o
 skip them, and scenes do not store them. The only way light leaves a laser is the **Lasers** card on
 the Live tab, and it only speaks the preset vocabulary the laser operator approved on site:
 
-- **Manual**: fan (flat line) or wave (zigzag), one of six fixed colors, pan within 48–80. Tilt is
-  pinned at 64 (the level beam, the lowest approved angle), zoom at 53, strobe and rolling at 0.
+- **Manual**: fan (flat line) or wave (zigzag), one of six fixed colors, "pan" within 48–80. On the
+  Scorpion Dual the pan channel is really a spread: the unit's two mirrored fans move in toward each
+  other or out away together. Tilt is pinned at 64 (the level beam, the lowest approved angle), zoom
+  at 53, strobe and rolling at 0.
 - **Sound**: the fixture's own sound-active modes (multicolor or one color); the laser picks its
   patterns and positions itself, as approved for that mode.
 - Anything else, including every unknown value a client might send, encodes as all zeros, the

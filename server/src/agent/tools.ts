@@ -204,7 +204,7 @@ export function runTool(host: AgentHost, name: string, rawInput: unknown, caller
         callerMayControl: roleAllows(caller.role, "admin"),
         lasers: laserFixtures(rig).map((f) => ({ id: f.id, name: f.name, on: laserIsOn(L.fixtures[f.id], L.armed, host.show.state.blackout), ...(L.fixtures[f.id] ?? {}) })),
         looks: LASER_LOOKS.map((l) => ({ id: l.id, name: l.name, description: l.description, animated: l.animated })),
-        vocabulary: { patterns: LASER_PATTERNS, colors: LASER_COLORS, musicColors: LASER_MUSIC_COLORS, pan: [LASER_PAN_MIN, LASER_PAN_MAX], note: "tilt, zoom and strobe are fixed by the operator and cannot be changed" },
+        vocabulary: { patterns: LASER_PATTERNS, colors: LASER_COLORS, musicColors: LASER_MUSIC_COLORS, pan: [LASER_PAN_MIN, LASER_PAN_MAX], note: "pan is the spread of the unit's two mirrored fans (low = together, high = apart), not a direction; tilt, zoom and strobe are fixed by the operator and cannot be changed" },
       });
     }
     case "set_lasers": {

@@ -112,15 +112,17 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
           const cx = X(f.x), cy = Y(f.y);
           const len = Math.max(rig.room.width, rig.room.height) * s.scale;
           const dir = (f.rotation + 90) * Math.PI / 180; // rotation 0 = beam toward +y (into the room)
-          const panOff = st?.mode === "manual" ? ((st.pan - 64) / 16) * 0.35 : 0;
           const spread = st?.mode === "music" ? 0.55 : st?.pattern === "wave" ? 0.42 : 0.35;
-          // Dual-mirror units put out one fan per aperture, splayed apart around the aiming direction.
+          // Dual-mirror units: the two fans mirror each other around the aiming direction and the pan
+          // channel moves them in or out together, between apertureSpreadMin and apertureSpreadMax.
           const apertures = Math.max(1, p?.apertures ?? 1);
-          const splay = ((p?.apertureSpread ?? 0) * Math.PI) / 180;
+          const u = st?.mode === "manual" ? (st.pan - 48) / 32 : 0.5;
+          const splayDeg = (p?.apertureSpreadMin ?? 0) + ((p?.apertureSpreadMax ?? 0) - (p?.apertureSpreadMin ?? 0)) * Math.max(0, Math.min(1, u));
+          const splay = (splayDeg * Math.PI) / 180;
           for (let k = 0; k < apertures; k++) {
             const offset = apertures === 1 ? 0 : -splay / 2 + (splay * k) / (apertures - 1);
             ctx.save();
-            ctx.translate(cx, cy); ctx.rotate(dir + panOff + offset);
+            ctx.translate(cx, cy); ctx.rotate(dir + offset);
             const g = ctx.createLinearGradient(0, 0, len, 0);
             g.addColorStop(0, hexA(col, 0.45));
             g.addColorStop(1, hexA(col, 0));

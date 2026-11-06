@@ -81,8 +81,8 @@ function LaserRow({ id, name, state, armed, blackout, editable, onChange }: { id
             </span>
           </div>
           <div className="param">
-            <span className="lbl">Pan</span><span className="val">{state.pan === LASER_PAN_CENTER ? "center" : state.pan < LASER_PAN_CENTER ? `${LASER_PAN_CENTER - state.pan} left` : `${state.pan - LASER_PAN_CENTER} right`}</span>
-            <input className="ctl" type="range" min={LASER_PAN_MIN} max={LASER_PAN_MAX} step={1} value={state.pan} disabled={dis} onChange={(e) => onChange({ pan: Number(e.target.value) })} onDoubleClick={() => onChange({ pan: LASER_PAN_CENTER })} aria-label={`${name} pan`} />
+            <span className="lbl">Spread (the two fans move in or out together)</span><span className="val">{state.pan === LASER_PAN_CENTER ? "middle" : state.pan < LASER_PAN_CENTER ? `${LASER_PAN_CENTER - state.pan} tighter` : `${state.pan - LASER_PAN_CENTER} wider`}</span>
+            <input className="ctl" type="range" min={LASER_PAN_MIN} max={LASER_PAN_MAX} step={1} value={state.pan} disabled={dis} onChange={(e) => onChange({ pan: Number(e.target.value) })} onDoubleClick={() => onChange({ pan: LASER_PAN_CENTER })} aria-label={`${name} spread`} />
           </div>
         </div>
       )}

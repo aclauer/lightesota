@@ -40,7 +40,10 @@ export interface LaserState {
   mode: LaserMode;
   pattern: LaserPattern;
   color: LaserColor;
-  /** Channel 6, clamped to LASER_PAN_MIN..LASER_PAN_MAX. */
+  /**
+   * Channel 6 ("pan" on the Scorpion), clamped to LASER_PAN_MIN..LASER_PAN_MAX. On the dual-mirror
+   * unit this is the spread: the two fans move toward each other at low values and apart at high ones.
+   */
   pan: number;
   musicColor: LaserMusicColor;
 }
@@ -164,12 +167,13 @@ const beatColor = (beat: number, offset = 0): LaserColor => LASER_COLORS[(Math.f
 export const LASER_LOOKS: LaserLook[] = [
   { id: "twin-green", name: "Twin green", description: "Both lasers: the certified green line, centered.", animated: false, at: () => manual("fan", "green") },
   { id: "red-green", name: "Red / green", description: "Green on the first laser, red on the second.", animated: false, at: (_t, _b, i) => manual("fan", i % 2 ? "red" : "green") },
-  { id: "cross", name: "Crossed", description: "Cyan and magenta lines panned toward each other so they cross mid-room.", animated: false, at: (_t, _b, i) => manual("fan", i % 2 ? "magenta" : "cyan", i % 2 ? LASER_PAN_MIN : LASER_PAN_MAX) },
+  { id: "tight", name: "Tight pair", description: "Both lasers with their two fans pulled close together, cyan.", animated: false, at: () => manual("fan", "cyan", LASER_PAN_MIN) },
+  { id: "wide", name: "Wide pair", description: "Both lasers with their two fans spread as far apart as allowed, magenta.", animated: false, at: () => manual("fan", "magenta", LASER_PAN_MAX) },
   { id: "waves", name: "Yellow waves", description: "Both lasers on the zigzag wave, yellow, centered.", animated: false, at: () => manual("wave", "yellow") },
-  { id: "slow-sweep", name: "Slow sweep", description: "Cyan waves drifting side to side over 16 s, the two lasers in opposite phase.", animated: true, at: (t, _b, i) => manual("wave", "cyan", sweep(t, 16, i % 2 ? 0.5 : 0)) },
-  { id: "scissors", name: "Scissors", description: "Green lines sweeping toward and away from each other every 10 s.", animated: true, at: (t, _b, i) => manual("fan", "green", i % 2 ? LASER_PAN_MAX + LASER_PAN_MIN - sweep(t, 10) : sweep(t, 10)) },
+  { id: "breathe", name: "Breathe", description: "Cyan waves slowly opening and closing over 16 s, both lasers together.", animated: true, at: (t) => manual("wave", "cyan", sweep(t, 16)) },
+  { id: "scissors", name: "Scissors", description: "Green fans scissoring open and shut every 10 s, one laser opening while the other closes.", animated: true, at: (t, _b, i) => manual("fan", "green", sweep(t, 10, i % 2 ? 0.5 : 0)) },
   { id: "beat-colors", name: "Beat colors", description: "Lines step through the six colors on every beat, the second laser one color ahead.", animated: true, at: (_t, b, i) => manual("fan", beatColor(b, i)) },
-  { id: "beat-waves", name: "Beat waves", description: "Waves that change color each beat and nudge sideways each bar.", animated: true, at: (_t, b, i) => manual("wave", beatColor(b, i * 3), LASER_PAN_CENTER + (Math.floor(b / 4) % 2 ? 8 : -8) * (i % 2 ? -1 : 1)) },
+  { id: "beat-waves", name: "Beat waves", description: "Waves that change color each beat and snap between narrow and wide each bar.", animated: true, at: (_t, b, i) => manual("wave", beatColor(b, i * 3), LASER_PAN_CENTER + (Math.floor(b / 4) % 2 ? 8 : -8) * (i % 2 ? -1 : 1)) },
   { id: "sound-multi", name: "Sound: multicolor", description: "Both lasers in their own sound-active multicolor mode.", animated: false, at: () => music("multicolor") },
   { id: "sound-cold", name: "Sound: cold", description: "Sound-active, cyan on the first laser and blue on the second.", animated: false, at: (_t, _b, i) => music(i % 2 ? "blue" : "cyan") },
   { id: "sound-warm", name: "Sound: warm", description: "Sound-active, red and yellow.", animated: false, at: (_t, _b, i) => music(i % 2 ? "yellow" : "red") },

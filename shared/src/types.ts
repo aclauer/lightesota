@@ -32,9 +32,14 @@ export interface FixtureProfile {
    * vocabulary in laser.ts, gated by the software arm. `channels` is only used for address planning.
    */
   kind?: "light" | "laser";
-  /** Lasers: number of output apertures and the angle (degrees) between the outermost beams. The Scorpion Dual has two mirrors. */
+  /**
+   * Dual-mirror lasers: the two output fans are mirror images of each other and the pan channel moves
+   * them symmetrically, in toward each other or out away. These are the angles (degrees) between the
+   * two fans at the bottom and the top of the approved pan window; the plan interpolates between them.
+   */
   apertures?: number;
-  apertureSpread?: number;
+  apertureSpreadMin?: number;
+  apertureSpreadMax?: number;
   /** Default drawing size on the stage (meters). */
   size?: number;
   shape?: "circle" | "square" | "bar";
