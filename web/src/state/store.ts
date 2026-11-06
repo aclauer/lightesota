@@ -106,7 +106,11 @@ export const useStore = create<AppState>((set, get) => {
     set((s) => {
       const a = { ...s.agent };
       switch (ev.type) {
-        case "conversations": a.conversations = ev.conversations; break;
+        case "conversations":
+          a.conversations = ev.conversations;
+          // Open the most recent conversation when none is open yet.
+          if (!a.current && ev.conversations.length > 0) setTimeout(() => ws.send({ type: "agent", command: { type: "open", conversationId: ev.conversations[0].id } }), 0);
+          break;
         case "conversation":
           if (!a.current || a.current.id === ev.conversation.id || !a.conversations.some((c) => c.id === a.current!.id)) a.current = ev.conversation;
           break;

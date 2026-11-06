@@ -244,7 +244,7 @@ input[type=range]:disabled { opacity: 0.4; }
 .plist button.active { background: var(--surface); border-color: var(--line-strong); }
 .plist button .sw { width: 28px; height: 8px; border-radius: 4px; flex: none; display: flex; overflow: hidden; }
 .plist button .sw i { flex: 1; }
-.plist button .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.plist button .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 
 /* Agent */
 .agent { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 12px; height: 100%; min-height: 0; }
@@ -325,3 +325,8 @@ table.tbl th { font-size: 11px; color: var(--fg-3); text-transform: uppercase; l
 .pip-stage canvas { pointer-events: none; }
 .pip.collapsed { width: 220px; }
 @media (max-width: 820px) { .pip { display: none; } }
+/* Keep the chat clear of the picture-in-picture box. */
+@media (min-width: 1100px) {
+  .pip-visible .agent .msgs, .pip-visible .agent .composer, .pip-visible .agent .suggestions { padding-right: 330px; }
+}
+@media (max-width: 1099px) { .view-agent .pip { display: none; } }

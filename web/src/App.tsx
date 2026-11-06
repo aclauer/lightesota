@@ -27,7 +27,7 @@ export function App() {
   }, []);
 
   return (
-    <div className="app">
+    <div className={`app view-${view} ${rig && view !== "live" ? "pip-visible" : ""}`}>
       <Header />
       <Nav />
       <main>
