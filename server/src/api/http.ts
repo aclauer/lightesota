@@ -67,7 +67,10 @@ export function createApp(ctx: AppContext) {
 
   // Static web app (built) with SPA fallback.
   if (fs.existsSync(config.webDist)) {
-    app.use(express.static(config.webDist, { index: "index.html", maxAge: "1h" }));
+    app.use(express.static(config.webDist, {
+      index: "index.html", maxAge: "1h",
+      setHeaders: (res, file) => { if (file.endsWith(".html") || file.endsWith(".webmanifest")) res.setHeader("Cache-Control", "no-cache"); },
+    }));
     app.get("*", (req, res, next) => {
       if (req.path.startsWith("/api") || req.path.startsWith("/ws")) return next();
       res.sendFile(path.join(config.webDist, "index.html"));

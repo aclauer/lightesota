@@ -3,6 +3,7 @@ import { useStore } from "./state/store";
 import { Header } from "./components/Header";
 import { Nav } from "./components/Nav";
 import { Toasts } from "./components/Toasts";
+import { MiniStage } from "./components/MiniStage";
 import { LiveView } from "./views/LiveView";
 import { PatternsView } from "./views/PatternsView";
 import { ScenesView } from "./views/ScenesView";
@@ -40,6 +41,7 @@ export function App() {
           : view === "agent" ? <AgentView />
           : <SettingsView />}
       </main>
+      {rig && view !== "live" && <MiniStage />}
       <Toasts />
     </div>
   );

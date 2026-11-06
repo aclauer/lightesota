@@ -305,3 +305,13 @@ table.tbl th { font-size: 11px; color: var(--fg-3); text-transform: uppercase; l
 .progress { height: 4px; background: var(--surface-3); border-radius: 2px; overflow: hidden; }
 .progress i { display: block; height: 100%; background: var(--accent); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* Picture-in-picture live preview */
+.pip { position: fixed; right: max(16px, var(--sar)); bottom: max(16px, var(--sab)); width: 300px; background: var(--bg-elev); border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: var(--shadow); z-index: 30; overflow: hidden; }
+.pip-bar { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 10px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.pip.collapsed .pip-bar { border-bottom: 0; }
+.pip-title { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pip-stage { height: 200px; cursor: pointer; background: var(--surface); }
+.pip-stage canvas { pointer-events: none; }
+.pip.collapsed { width: 220px; }
+@media (max-width: 820px) { .pip { display: none; } }
