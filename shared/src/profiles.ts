@@ -89,6 +89,21 @@ export const BUILTIN_PROFILES: FixtureProfile[] = [
     notes: "Operator-only. Menu: DMX address 031 / 041, never Auto, Sound, ILS, Slave or Test. Controlled from the Lasers card on Live after arming.",
   },
   {
+    id: "chauvet-hurricane-haze-4d-2ch",
+    name: "Chauvet Hurricane Haze 4D (2-CH hazer)",
+    manufacturer: "Chauvet DJ",
+    transport: "dmx",
+    colorModel: "dimmer",
+    kind: "haze",
+    shape: "square",
+    size: 0.3,
+    channels: [
+      { fn: "fixed", name: "Blower speed", value: 0 },
+      { fn: "fixed", name: "Haze volume", value: 0 },
+    ],
+    notes: "Operator-only. Address d051. Controlled from the Haze card on Live after arming; every run auto-stops. Keeps emitting a little while fluid is in the line.",
+  },
+  {
     id: "generic-rgb-3ch",
     name: "Generic RGB (3-CH)",
     transport: "dmx",

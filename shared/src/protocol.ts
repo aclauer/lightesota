@@ -52,6 +52,10 @@ export type ClientMessage =
   | { type: "setLaserLook"; lookId: string | null }
   /** Everything off and disarmed. Anyone with control can do this. */
   | { type: "lasersOff" }
+  /** Hazer (admin): arm/disarm, set levels, start a timed run (seconds) or stop it (runSec 0). */
+  | { type: "setHaze"; armed?: boolean; fan?: number; output?: number; runSec?: number }
+  /** Stop haze and disarm. Anyone with control. */
+  | { type: "hazeOff" }
   | { type: "setReleased"; released: boolean }
   | { type: "recallScene"; sceneId: string; crossfadeMs?: number }
   | { type: "saveScene"; name: string; sceneId?: string }
@@ -89,7 +93,7 @@ export function requiredRole(msg: ClientMessage): Role {
     case "setCrossfade": case "setBpm": case "tap": case "resync": case "nudge":
     case "setOverride": case "clearOverrides": case "setSolo": case "recallScene":
     case "playPlaylist": case "stopPlaylist": case "playlistNext": case "playlistPrev":
-    case "testFixture": case "audio": case "setFollowMicBpm": case "setSleep": case "lasersOff":
+    case "testFixture": case "audio": case "setFollowMicBpm": case "setSleep": case "lasersOff": case "hazeOff":
       return "guest";
     case "agent":
       return "guest"; // guests are further gated by settings.agent.guestAccess and rate limits

@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { nanoid } from "nanoid";
 import {
   defaultParams, sanitizeParams, defaultLasersState, defaultLaserState, sanitizeLaserState, laserFixtures, findLaserLook, LASER_LOOK_PATTERN,
+  defaultHazeState, sanitizeHaze, hazeFixtures, hazeRunning, HAZE_MAX_RUN_SEC,
   type AudioFrame, type LaserState, type FixtureOverride, type ParamValues, type Rig, type Scene, type Settings, type ShowState, type Playlist,
 } from "../../shared/src/index.js";
 import { Engine } from "./engine/engine.js";
@@ -30,6 +31,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
       overrides: {}, solo: [], activeSceneId: null, playlist: null, released: false,
       sleepAt: null, audio: { active: false, source: null, followBpm: false, level: 0, bpm: null },
       lasers: defaultLasersState(),
+      haze: defaultHazeState(),
     };
     this.state = {
       ...base,
@@ -41,9 +43,11 @@ export class ShowController extends EventEmitter<ShowEvents> {
       sleepAt: null,
       audio: { active: false, source: null, followBpm: saved.audio?.followBpm ?? false, level: 0, bpm: null },
       history: Array.isArray(saved.history) ? saved.history.filter((h) => h && typeof h.patternId === "string").slice(0, 12) : [],
-      // Lasers always come up disarmed and off, whatever was saved.
+      // Lasers and haze always come up disarmed and off, whatever was saved.
       lasers: defaultLasersState(),
+      haze: defaultHazeState(),
     };
+    setInterval(() => this.hazeTick(), 1000).unref();
     setInterval(() => this.audioTick(), 500).unref();
     setInterval(() => this.laserLookTick(), 100).unref();
     this.engine.on("patternLoaded", ({ id, params, usesLasers, laserLook }) => {
@@ -218,7 +222,35 @@ export class ShowController extends EventEmitter<ShowEvents> {
   setBlackout(b: boolean) { this.state.blackout = b; this.engine.blackout = b; this.changed(); }
   setSpeed(v: number) { this.state.speed = Math.max(0, Math.min(4, v)); this.engine.speed = this.state.speed; this.changed(); }
   setCrossfade(ms: number) { this.state.crossfadeMs = Math.max(0, Math.min(20000, ms)); this.changed(); }
-  setReleased(r: boolean) { this.state.released = r; if (r) this.lasersOff("release"); this.changed(); }
+  setReleased(r: boolean) { this.state.released = r; if (r) { this.lasersOff("release"); this.hazeOff("release"); } this.changed(); }
+
+  // ---- haze (operator-only, timed runs; see shared/src/haze.ts) ----
+  setHaze(msg: { armed?: boolean; fan?: number; output?: number; runSec?: number }, by: string) {
+    const H = this.state.haze;
+    if (hazeFixtures(this.getRig()).length === 0) throw new Error("No enabled hazer in the rig");
+    if (msg.armed === false) { this.hazeOff(by); return; }
+    if (msg.armed === true && !H.armed) { H.armed = true; H.armedBy = by || "admin"; this.emit("toast", { level: "warning", text: `Haze armed by ${H.armedBy}` }); }
+    Object.assign(H, sanitizeHaze(msg, H));
+    if (typeof msg.runSec === "number" && Number.isFinite(msg.runSec)) {
+      if (msg.runSec <= 0) H.runUntil = null;
+      else {
+        if (!H.armed) throw new Error("Arm the hazer first");
+        H.runUntil = Date.now() + Math.min(HAZE_MAX_RUN_SEC, msg.runSec) * 1000;
+      }
+    }
+    this.changed();
+  }
+  hazeOff(by: string) {
+    const H = this.state.haze;
+    const was = hazeRunning(H) || H.armed;
+    H.runUntil = null; H.armed = false; H.armedBy = null;
+    if (was) this.emit("toast", { level: "info", text: `Haze off (${by || "control"})` });
+    this.changed();
+  }
+  private hazeTick() {
+    const H = this.state.haze;
+    if (H.runUntil !== null && H.runUntil <= Date.now()) { H.runUntil = null; this.emit("toast", { level: "info", text: "Haze run finished" }); this.changed(); }
+  }
 
   // ---- lasers (operator-approved presets only; see shared/src/laser.ts) ----
   armLasers(armed: boolean, by: string) {

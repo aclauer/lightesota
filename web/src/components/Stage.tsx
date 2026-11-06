@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { findProfile, engineFixtures, isLaserProfile, laserCss, laserIsOn, type Fixture, type Rig } from "@lightesota/shared";
+import { findProfile, engineFixtures, isLaserProfile, isHazeProfile, hazeRunning, laserCss, laserIsOn, type Fixture, type Rig } from "@lightesota/shared";
 import { useStore } from "../state/store";
 import { frameToCss, frameLuma } from "../lib/format";
 
@@ -136,6 +136,18 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
           }
         }
       }
+      // Haze: a soft grey plume while a run is on.
+      if (live && show?.haze && hazeRunning(show.haze) && !blackout) {
+        for (const f of rig.fixtures) {
+          const p = findProfile(f.profileId, rig.customProfiles);
+          if (!f.enabled || !isHazeProfile(p)) continue;
+          const cx = X(f.x), cy = Y(f.y);
+          const rad = (1.5 + 3 * show.haze.output) * s.scale;
+          const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+          g.addColorStop(0, "rgba(200, 205, 215, 0.28)"); g.addColorStop(1, "rgba(200, 205, 215, 0)");
+          ctx.fillStyle = g; ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+        }
+      }
       // Glows first (live)
       if (live) {
         for (let i = 0; i < enabled.length; i++) {
@@ -167,9 +179,10 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
         ctx.save();
         ctx.translate(cx, cy); ctx.rotate((f.rotation * Math.PI) / 180);
         const laser = isLaserProfile(p);
+        const haze = isHazeProfile(p);
         const lst = laser ? lasers?.fixtures[f.id] : undefined;
         const laserOn = laser && !!lasers && laserIsOn(lst, lasers.armed, blackout);
-        const fill = !f.enabled ? "#2a2c33" : laser ? (laserOn ? laserCss(lst) : (lasers?.armed ? "#5a1d1d" : "#2a2c33")) : c ? frameToCss(c) : (isDark ? surface : "#1f2129");
+        const fill = !f.enabled ? "#2a2c33" : laser ? (laserOn ? laserCss(lst) : (lasers?.armed ? "#5a1d1d" : "#2a2c33")) : haze ? (show?.haze && hazeRunning(show.haze) ? "#c8cdd7" : show?.haze?.armed ? "#5a1d1d" : "#2a2c33") : c ? frameToCss(c) : (isDark ? surface : "#1f2129");
         ctx.fillStyle = fill;
         ctx.strokeStyle = f.id === selectedId ? accent : s.hover === f.id ? fg : fg3;
         ctx.lineWidth = f.id === selectedId ? 3 : 1.5;

@@ -363,3 +363,6 @@ table.tbl th { font-size: 11px; color: var(--fg-3); text-transform: uppercase; l
 .chips { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .pcard .name .pill { font-size: 10px; padding: 1px 5px; letter-spacing: 0.04em; }
 .pcard .name > .row { flex: none; flex-wrap: nowrap; }
+.card.haze.armed { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger) inset; }
+.show-mobile-inline { display: none; }
+@media (max-width: 820px) { .show-mobile-inline { display: inline; } }

@@ -27,6 +27,7 @@ export function Header() {
         <span>Lightesota</span>
         {settings?.sharing.venueName && <span className="venue">· {settings.sharing.venueName}</span>}
       </div>
+      {show?.haze.armed && <span className="pill warn laser-armed" title="Hazer armed"><span className="hide-mobile">Haze armed</span><span className="show-mobile-inline">H</span></span>}
       {show?.lasers.armed && <span className="pill danger laser-armed" title={`Lasers armed${show.lasers.armedBy ? ` by ${show.lasers.armedBy}` : ""}`}><AlertTriangle /> <span className="hide-mobile">Lasers armed</span></span>}
       <div className="spacer" />
       <Transport />

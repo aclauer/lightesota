@@ -184,6 +184,8 @@ export class WsHub {
       case "setLaser": show.setLaser(String(msg.fixtureId), (msg.state ?? {}) as Partial<LaserState>); return;
       case "setLaserLook": show.setLaserLook(msg.lookId === null ? null : String(msg.lookId)); return;
       case "lasersOff": show.lasersOff(client.name || "someone"); return;
+      case "setHaze": show.setHaze({ armed: msg.armed, fan: msg.fan, output: msg.output, runSec: msg.runSec }, client.name || "admin"); return;
+      case "hazeOff": show.hazeOff(client.name || "someone"); return;
       case "setReleased": show.setReleased(!!msg.released); ctx.output.released = !!msg.released; return;
       case "recallScene": show.recallScene(msg.sceneId, msg.crossfadeMs, client.name); return;
       case "saveScene": return show.captureScene(msg.name, msg.sceneId);

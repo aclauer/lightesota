@@ -60,7 +60,8 @@ test("lasers are excluded from the pattern engine and old protected ranges migra
   const m = migrateRig(old);
   assert.equal(m.changed, true);
   assert.deepEqual(laserFixtures(m.rig).map((f) => [f.id, f.address]), [["l1", 31], ["l2", 41]]);
-  assert.deepEqual(m.rig.protectedRanges.map((r) => r.from), [51]);
+  assert.deepEqual(m.rig.protectedRanges, []);
+  assert.deepEqual(m.rig.fixtures.filter((f) => f.id === "h1").map((f) => f.address), [51]);
   assert.deepEqual(engineFixtures(m.rig).map((f) => f.id), ["w1"]);
   // Running it again is a no-op.
   assert.equal(migrateRig(m.rig).changed, false);
@@ -121,4 +122,17 @@ test("every built-in pattern with a lasers section compiles and its lasers() sta
     }
   }
   assert.ok(withLasers >= 8, `expected several built-ins with lasers, found ${withLasers}`);
+});
+
+test("haze bytes are zero unless armed and inside a run, and never exceed the run deadline", async () => {
+  const { hazeBytes, defaultHazeState, sanitizeHaze } = await import("../../../shared/src/index.js");
+  const now = 1_000_000;
+  const h = { ...defaultHazeState(), fan: 0.6, output: 0.4 };
+  assert.deepEqual(hazeBytes(h, false, now), [0, 0]);                                   // disarmed
+  assert.deepEqual(hazeBytes({ ...h, armed: true }, false, now), [0, 0]);               // armed, no run
+  assert.deepEqual(hazeBytes({ ...h, armed: true, runUntil: now + 5000 }, false, now), [153, 102]);
+  assert.deepEqual(hazeBytes({ ...h, armed: true, runUntil: now + 5000 }, true, now), [0, 0]); // blackout
+  assert.deepEqual(hazeBytes({ ...h, armed: true, runUntil: now - 1 }, false, now), [0, 0]);   // deadline passed
+  const s = sanitizeHaze({ fan: 9, output: -2 }, h);
+  assert.equal(s.fan, 1); assert.equal(s.output, 0);
 });

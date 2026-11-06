@@ -1,4 +1,4 @@
-import { findProfile, isLaserProfile, laserBytes, type LasersState, type OutputStatus, type Rig, type Settings } from "../../../shared/src/index.js";
+import { findProfile, isLaserProfile, isHazeProfile, laserBytes, hazeBytes, type HazeState, type LasersState, type OutputStatus, type Rig, type Settings } from "../../../shared/src/index.js";
 import type { Engine, EngineFrame } from "../engine/engine.js";
 import { OUT_STRIDE } from "../engine/sandbox.js";
 import { ArtNetListener, ArtNetSender } from "./artnet.js";
@@ -23,7 +23,7 @@ export class OutputManager {
   dmxSubscribers = 0;
   onDmx: ((universe: number, data: Uint8Array) => void) | null = null;
 
-  constructor(private engine: Engine, settings: Settings, rig: Rig, private getLasers: () => { lasers: LasersState; blackout: boolean }) {
+  constructor(private engine: Engine, settings: Settings, rig: Rig, private getLasers: () => { lasers: LasersState; haze: HazeState; blackout: boolean }) {
     this.settings = settings;
     this.rig = rig;
     this.engine.on("frame", (f) => this.onFrame(f));
@@ -100,13 +100,16 @@ export class OutputManager {
    * preset tables and the software arm; disarmed, blacked out or off encodes as all zeros.
    */
   private writeLasers(universe: number, buf: Uint8Array) {
-    const { lasers, blackout } = this.getLasers();
+    const { lasers, haze, blackout } = this.getLasers();
     const blocked = new Set(this.plan!.blocked.map((b) => b.fixtureId));
     for (const f of this.rig.fixtures) {
       if (!f.enabled || (f.universe ?? 0) !== universe || !f.address || blocked.has(f.id)) continue;
       const p = findProfile(f.profileId, this.rig.customProfiles);
-      if (!p || !isLaserProfile(p)) continue;
-      const bytes = laserBytes(lasers.fixtures[f.id], lasers.armed, blackout);
+      if (!p) continue;
+      let bytes: number[];
+      if (isLaserProfile(p)) bytes = laserBytes(lasers.fixtures[f.id], lasers.armed, blackout);
+      else if (isHazeProfile(p)) bytes = hazeBytes(haze, blackout);
+      else continue;
       for (let c = 0; c < bytes.length; c++) {
         const ch = f.address - 1 + c;
         if (ch >= 0 && ch < 512 && !this.plan!.protectedMask[ch]) buf[ch] = bytes[c];

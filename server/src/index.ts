@@ -19,13 +19,13 @@ ensureDataDirs();
 const rigFile = new JsonFile<Rig>("rig.json", defaultRig);
 {
   const m = migrateRig(rigFile.get());
-  if (m.changed) { rigFile.set(m.rig); console.log("[rig] lasers added as fixtures (were protected ranges); they start disarmed"); }
+  if (m.changed) { rigFile.set(m.rig); console.log("[rig] effects (lasers/hazer) added as fixtures (were protected ranges); they start disarmed"); }
 }
 const settingsFile = new JsonFile<Settings>("settings.json", defaultSettings, (raw) => deepMerge(defaultSettings(), raw));
 const library = new Library();
 library.load();
 const show = new ShowController(library, () => rigFile.get(), () => settingsFile.get());
-const output = new OutputManager(show.engine, settingsFile.get(), rigFile.get(), () => ({ lasers: show.state.lasers, blackout: show.state.blackout }));
+const output = new OutputManager(show.engine, settingsFile.get(), rigFile.get(), () => ({ lasers: show.state.lasers, haze: show.state.haze, blackout: show.state.blackout }));
 const auth = new Auth(() => settingsFile.get());
 const devices = new DeviceStore();
 

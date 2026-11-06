@@ -46,16 +46,16 @@ JSON and JavaScript files.
 The server starts with the office rig from the lighting notes: four SlimPAR Pro H washes in 12CH
 at 101/113/125/137, two Saber Spot pinspots at 29/30 (not on the DMX chain yet, so they start
 disabled; enable them in the Stage editor once wired), two Scorpion Dual RGB ILS lasers at 31/41
-(see [Lasers](#lasers)), Art-Net to 10.10.0.204 universe 0. Channels 51–52 (hazer) are protected
-and never written.
+(see [Lasers](#lasers)), a Hurricane Haze 4D hazer at 51 (see [Haze](#haze)), Art-Net to
+10.10.0.204 universe 0.
 
 **Two senders share the ODE: Home Assistant and this app.** The ODE's ports are set to **HTP merge**
 (highest value wins per channel), which is what makes that work:
 
 - HA's frame is all zeros for the washes when its lights are off, so the app's values win there.
-- The app sends 0 on the hazer channels (51–52), so HA's gated values win there. Laser channels
-  (31–50) are 0 whenever the app's lasers are disarmed, which is the normal state; see Lasers below
-  for what happens when both HA and the app have lasers enabled.
+- Laser channels (31–50) and hazer channels (51–52) are 0 whenever the app's lasers and hazer are
+  disarmed, which is the normal state, so HA's gated values win there; see Lasers below for what
+  happens when both HA and the app have lasers enabled.
 - Either sender can stop without breaking the other. "Release output" in Settings stops the app's
   transmission entirely when HA alone should drive the rig.
 - While the app is lit, HA cannot force a wash darker than the app's level (HTP takes the maximum).
@@ -127,6 +127,16 @@ software off is not an interlock. If Home Assistant's own laser entities are ena
 time, the ODE's HTP merge takes the per-channel maximum of two approved frames, which is still an
 approved frame, but run one controller at a time anyway.
 
+## Haze
+
+The hazer is a fixture with the same operator-only treatment as the lasers: patterns never see it,
+the agent has no tool for it, and the **Haze** card on Live is the only way to run it. An admin arms
+it, sets blower speed and haze output, and starts a **timed run** (30 s to 10 min, 20 min at most);
+the output drops to zero by itself when the run ends. Blackout holds it at zero, "Haze off" (anyone
+with control) stops it and disarms, and every server start comes up disarmed. The Haze 4D keeps
+emitting a little while fluid is in the line, so power it down when done, and never run haze
+without the building's approval for detectors and ventilation.
+
 ## Writing patterns
 
 A pattern is a small JavaScript module. The full reference is in the editor (API button) and in
@@ -152,13 +162,13 @@ pattern that hangs is disabled rather than freezing the show. Built-ins live in
 
 ## Safety rules this app keeps
 
-- The hazer (51–52) is a protected range. The output stage never writes it; without an upstream
-  frame it is held at 0. The fixture editor refuses addresses that overlap it.
-- Lasers are written only from the approved preset tables in `shared/src/laser.ts`, only while armed.
+- Lasers are written only from the approved preset tables in `shared/src/laser.ts`, only while armed;
+  the hazer only during an armed, timed run (`shared/src/haze.ts`).
   Do not add channel functions, widen the pan window or lower the tilt without the operator.
 - Software off is not an emergency stop. The ODE can hold its last frame. Physical power isolation
   is the stop.
-- The ODE merges HA and this app with HTP. Never send non-zero values on channels 51–52 from here.
+- The ODE merges HA and this app with HTP: whichever sender has the effect enabled wins per channel,
+  so run effects from one controller at a time.
 - On shutdown (Ctrl-C) the server sends a few all-zero frames so the rig goes dark.
 
 ## Layout

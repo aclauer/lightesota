@@ -76,9 +76,9 @@ export function isLaserFixture(f: Fixture, rig: Rig): boolean {
   return isLaserProfile(findProfile(f.profileId, rig.customProfiles));
 }
 
-/** Fixtures the pattern engine drives: enabled and not a laser. Frames are indexed in this order. */
+/** Fixtures the pattern engine drives: enabled lights only (no lasers, no hazer). Frames are indexed in this order. */
 export function engineFixtures(rig: Rig): Fixture[] {
-  return rig.fixtures.filter((f) => f.enabled && !isLaserFixture(f, rig));
+  return rig.fixtures.filter((f) => { if (!f.enabled) return false; const k = findProfile(f.profileId, rig.customProfiles)?.kind; return k !== "laser" && k !== "haze"; });
 }
 
 /** Enabled lasers in rig order. */

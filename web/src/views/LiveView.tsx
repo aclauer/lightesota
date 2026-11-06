@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useEffect, useState as useStateReact } from "react";
 import { Code2, Flashlight, Mic, MicOff, Moon, RotateCcw, Save, X } from "lucide-react";
-import { findProfile, engineFixtures, isLaserProfile, type FixtureOverride } from "@lightesota/shared";
+import { findProfile, engineFixtures, isLaserProfile, isHazeProfile, type FixtureOverride } from "@lightesota/shared";
 import { LasersCard } from "../components/LasersCard";
+import { HazeCard } from "../components/HazeCard";
 import { useStore } from "../state/store";
 import { Stage } from "../components/Stage";
 import { ParamControls } from "../components/ParamControls";
@@ -90,6 +91,7 @@ export function LiveView() {
         </div>
         <SoundCard />
         <LasersCard />
+        <HazeCard />
         {scenes.length > 0 && (
           <div className="card">
             <h3>Scenes</h3>
@@ -236,14 +238,14 @@ function FixtureInspector({ id, onClose }: { id: string; onClose: () => void }) 
   const ov: FixtureOverride | undefined = show.overrides[f.id];
   const soloed = show.solo.includes(f.id);
   const isColor = profile?.colorModel !== "dimmer";
-  if (isLaserProfile(profile)) {
+  if (isLaserProfile(profile) || isHazeProfile(profile)) {
     return (
       <div className="card fixture-inspector">
         <div className="row" style={{ justifyContent: "space-between", marginBottom: 6 }}>
           <div><h2 style={{ marginBottom: 0 }}>{f.name}</h2><div className="hint">{profile?.name ?? f.profileId}{f.address ? ` · DMX ${f.address}` : ""}</div></div>
           <button className="btn ghost icon sm" onClick={onClose} aria-label="Close"><X /></button>
         </div>
-        <p className="hint">Operator-only fixture. Patterns, overrides and flash never touch it; use the Lasers card below.</p>
+        <p className="hint">Operator-only fixture. Patterns, overrides and flash never touch it; use the {isHazeProfile(profile) ? "Haze" : "Lasers"} card below.</p>
       </div>
     );
   }
