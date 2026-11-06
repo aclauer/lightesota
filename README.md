@@ -46,17 +46,20 @@ at 101/113/125/137, two Saber Spot pinspots at 29/30 (not on the DMX chain yet, 
 disabled; enable them in the Stage editor once wired), Art-Net to 10.10.0.204 universe 0.
 Channels 31–52 (lasers, hazer) are protected and never written.
 
-**Only one Art-Net sender may talk to the ODE** (it is set to Merge None). Home Assistant currently
-sends to it. Pick one of:
+**Two senders share the ODE: Home Assistant and this app.** The ODE's ports are set to **HTP merge**
+(highest value wins per channel), which is what makes that work:
 
-1. **Pause HA's Art-Net integration** (disable the `artnet_led` platform or stop HA) while
-   Lightesota runs. Simplest for a first test.
-2. **Upstream merge (recommended long term).** In HA's `office_lighting.yaml` change
-   `host: 10.10.0.204` to the IP of the machine running Lightesota, then in Settings → Art-Net turn
-   on "Merge an upstream Art-Net sender". Lightesota forwards HA's frame for every channel it does
-   not own (lasers, hazer, anything else) and overwrites the wash and spot channels. The ODE still
-   sees a single sender and the laser gating in HA keeps working. "Release output" hands the whole
-   universe back to HA at any time.
+- HA's frame is all zeros for the washes when its lights are off, so the app's values win there.
+- The app always sends 0 on the laser and hazer channels (31–52), so HA's gated values win there
+  and the laser safety logic in HA stays in charge.
+- Either sender can stop without breaking the other. "Release output" in Settings stops the app's
+  transmission entirely when HA alone should drive the rig.
+- While the app is lit, HA cannot force a wash darker than the app's level (HTP takes the maximum).
+
+If the ODE is ever back on **Merge None**, it keeps the first sender it hears and silently drops the
+other; the symptom is the Live view moving while the lights stay dark, and `merge_err=1` on the
+ODE's config page (`http://10.10.0.204/index.html?config.cgi`). Either set HTP again, or use the
+app's "Merge an upstream Art-Net sender" setting with HA pointed at the app's IP.
 
 Check the DMX monitor in Settings to see exactly what is being sent before you trust it.
 
@@ -116,6 +119,8 @@ pattern that hangs is disabled rather than freezing the show. Built-ins live in
   editor refuses addresses that overlap them.
 - Software off is not an emergency stop. The ODE can hold its last frame. Physical power isolation
   is the stop.
+- The ODE merges HA and this app with HTP. Never send non-zero values on channels 31–52 from here;
+  that is what keeps HA's laser gating authoritative under HTP.
 - On shutdown (Ctrl-C) the server sends a few all-zero frames so the rig goes dark.
 
 ## Layout
