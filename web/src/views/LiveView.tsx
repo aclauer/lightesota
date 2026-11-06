@@ -244,7 +244,12 @@ function FixtureInspector({ id, onClose }: { id: string; onClose: () => void }) 
       <div className="chips" style={{ marginBottom: 10 }}>{f.tags.map((t) => <span key={t} className="pill">{t}</span>)}</div>
       {c && <div className="row" style={{ marginBottom: 10 }}><span className="dot" style={{ width: 18, height: 18, background: `rgb(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)})`, opacity: 0.3 + c.dim * 0.7 }} /><span className="mono faint">{isColor ? `rgb ${Math.round(c.r * 255)} ${Math.round(c.g * 255)} ${Math.round(c.b * 255)}` : ""} dim {Math.round(c.dim * 100)}%</span></div>}
       <div className="row" style={{ marginBottom: 10 }}>
-        <button className={`btn sm ${soloed ? "active" : ""}`} disabled={!control} onClick={() => send({ type: "setSolo", fixtureIds: soloed ? show.solo.filter((x) => x !== f.id) : [...show.solo, f.id] })}>Solo</button>
+        <button className={`btn sm ${soloed ? "active" : ""}`} disabled={!control} title="Solo this fixture (shift-click to add to the current solo)" onClick={(e) => {
+          const next = e.shiftKey
+            ? (soloed ? show.solo.filter((x) => x !== f.id) : [...show.solo, f.id])
+            : (soloed && show.solo.length === 1 ? [] : [f.id]);
+          send({ type: "setSolo", fixtureIds: next });
+        }}>{soloed ? "Soloed" : "Solo"}</button>
         <button className="btn sm" disabled={!control} onClick={() => send({ type: "testFixture", fixtureId: f.id, seconds: 2 })} title="Flash white for 2 s to find this fixture"><Flashlight /> Flash</button>
         {ov && <button className="btn sm danger" disabled={!control} onClick={() => setOv(null)}>Clear override</button>}
       </div>
