@@ -3,8 +3,19 @@ import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-/** Repo root, whether running from src (tsx) or dist (tsc). */
-export const REPO_ROOT = path.resolve(here, "..", "..");
+
+/** Walk up from this file until the directory that holds package.json and patterns/ (works from src and dist). */
+function findRepoRoot(start: string): string {
+  let d = start;
+  for (let i = 0; i < 8; i++) {
+    if (fs.existsSync(path.join(d, "package.json")) && fs.existsSync(path.join(d, "patterns"))) return d;
+    const up = path.dirname(d);
+    if (up === d) break;
+    d = up;
+  }
+  return path.resolve(start, "..", "..");
+}
+export const REPO_ROOT = findRepoRoot(here);
 
 export const config = {
   port: Number(process.env.PORT ?? 8787),
