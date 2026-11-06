@@ -182,6 +182,7 @@ export class WsHub {
       case "setSolo": show.setSolo(msg.fixtureIds); return;
       case "armLasers": show.armLasers(!!msg.armed, client.name || "admin"); return;
       case "setLaser": show.setLaser(String(msg.fixtureId), (msg.state ?? {}) as Partial<LaserState>); return;
+      case "setLaserLook": show.setLaserLook(msg.lookId === null ? null : String(msg.lookId)); return;
       case "lasersOff": show.lasersOff(client.name || "someone"); return;
       case "setReleased": show.setReleased(!!msg.released); ctx.output.released = !!msg.released; return;
       case "recallScene": show.recallScene(msg.sceneId, msg.crossfadeMs, client.name); return;

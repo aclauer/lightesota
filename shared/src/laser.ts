@@ -53,6 +53,8 @@ export interface LasersState {
   /** Who armed them (display name). */
   armedBy: string | null;
   fixtures: Record<string, LaserState>;
+  /** Active look id (see LASER_LOOKS) or null when lasers are set by hand. */
+  look: string | null;
 }
 
 export function defaultLaserState(): LaserState {
@@ -60,7 +62,7 @@ export function defaultLaserState(): LaserState {
 }
 
 export function defaultLasersState(): LasersState {
-  return { armed: false, armedAt: null, armedBy: null, fixtures: {} };
+  return { armed: false, armedAt: null, armedBy: null, fixtures: {}, look: null };
 }
 
 export function isLaserProfile(p: FixtureProfile | undefined): boolean {
@@ -129,4 +131,50 @@ export function laserCss(state: LaserState | undefined): string {
   if (!state) return "#888";
   if (state.mode === "music") return state.musicColor === "multicolor" ? "#ffffff" : LASER_COLOR_CSS[state.musicColor];
   return LASER_COLOR_CSS[state.color];
+}
+
+// ---------- Looks: named combinations of approved presets, some animated ----------
+
+/**
+ * A look assigns a LaserState to each armed laser, optionally as a function of time and beat.
+ * Everything a look returns still goes through sanitizeLaserState, so a look can only ever
+ * pick from the approved tables above. Motion is limited to stepping pan inside its window and
+ * switching between approved colors; tilt, zoom and strobe never move.
+ */
+export interface LaserLook {
+  id: string;
+  name: string;
+  description: string;
+  /** Does the look change over time (pan sweep or beat colors)? */
+  animated: boolean;
+  /** `i` is the laser's index among the enabled lasers, `n` the count. */
+  at: (t: number, beat: number, i: number, n: number) => LaserState;
+}
+
+const manual = (pattern: LaserPattern, color: LaserColor, pan = LASER_PAN_CENTER): LaserState => ({ mode: "manual", pattern, color, pan: Math.round(pan), musicColor: "multicolor" });
+const music = (musicColor: LaserMusicColor): LaserState => ({ mode: "music", pattern: "fan", color: "green", pan: LASER_PAN_CENTER, musicColor: musicColor });
+/** Triangle wave between LASER_PAN_MIN and LASER_PAN_MAX with the given period, phase in 0..1. */
+const sweep = (t: number, periodSec: number, phase = 0) => {
+  const u = ((t / periodSec + phase) % 1 + 1) % 1;
+  const tri = u < 0.5 ? u * 2 : 2 - u * 2;
+  return LASER_PAN_MIN + tri * (LASER_PAN_MAX - LASER_PAN_MIN);
+};
+const beatColor = (beat: number, offset = 0): LaserColor => LASER_COLORS[(Math.floor(beat) + offset) % LASER_COLORS.length];
+
+export const LASER_LOOKS: LaserLook[] = [
+  { id: "twin-green", name: "Twin green", description: "Both lasers: the certified green line, centered.", animated: false, at: () => manual("fan", "green") },
+  { id: "red-green", name: "Red / green", description: "Green on the first laser, red on the second.", animated: false, at: (_t, _b, i) => manual("fan", i % 2 ? "red" : "green") },
+  { id: "cross", name: "Crossed", description: "Cyan and magenta lines panned toward each other so they cross mid-room.", animated: false, at: (_t, _b, i) => manual("fan", i % 2 ? "magenta" : "cyan", i % 2 ? LASER_PAN_MIN : LASER_PAN_MAX) },
+  { id: "waves", name: "Yellow waves", description: "Both lasers on the zigzag wave, yellow, centered.", animated: false, at: () => manual("wave", "yellow") },
+  { id: "slow-sweep", name: "Slow sweep", description: "Cyan waves drifting side to side over 16 s, the two lasers in opposite phase.", animated: true, at: (t, _b, i) => manual("wave", "cyan", sweep(t, 16, i % 2 ? 0.5 : 0)) },
+  { id: "scissors", name: "Scissors", description: "Green lines sweeping toward and away from each other every 10 s.", animated: true, at: (t, _b, i) => manual("fan", "green", i % 2 ? LASER_PAN_MAX + LASER_PAN_MIN - sweep(t, 10) : sweep(t, 10)) },
+  { id: "beat-colors", name: "Beat colors", description: "Lines step through the six colors on every beat, the second laser one color ahead.", animated: true, at: (_t, b, i) => manual("fan", beatColor(b, i)) },
+  { id: "beat-waves", name: "Beat waves", description: "Waves that change color each beat and nudge sideways each bar.", animated: true, at: (_t, b, i) => manual("wave", beatColor(b, i * 3), LASER_PAN_CENTER + (Math.floor(b / 4) % 2 ? 8 : -8) * (i % 2 ? -1 : 1)) },
+  { id: "sound-multi", name: "Sound: multicolor", description: "Both lasers in their own sound-active multicolor mode.", animated: false, at: () => music("multicolor") },
+  { id: "sound-cold", name: "Sound: cold", description: "Sound-active, cyan on the first laser and blue on the second.", animated: false, at: (_t, _b, i) => music(i % 2 ? "blue" : "cyan") },
+  { id: "sound-warm", name: "Sound: warm", description: "Sound-active, red and yellow.", animated: false, at: (_t, _b, i) => music(i % 2 ? "yellow" : "red") },
+];
+
+export function findLaserLook(id: string | null | undefined): LaserLook | undefined {
+  return id ? LASER_LOOKS.find((l) => l.id === id) : undefined;
 }

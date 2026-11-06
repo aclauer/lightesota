@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, Power } from "lucide-react";
 import {
   LASER_COLORS, LASER_COLOR_CSS, LASER_MUSIC_COLORS, LASER_PAN_CENTER, LASER_PAN_MAX, LASER_PAN_MIN, LASER_PATTERNS, LASER_PATTERN_LABEL,
-  defaultLaserState, laserFixtures, laserIsOn, type LaserState,
+  LASER_LOOKS, defaultLaserState, laserFixtures, laserIsOn, type LaserState,
 } from "@lightesota/shared";
 import { useStore } from "../state/store";
 import { timeAgo } from "../lib/format";
@@ -41,6 +41,13 @@ export function LasersCard() {
         <p className="hint" style={{ marginBottom: 10 }}>Only an admin can arm the lasers or change presets.</p>
       )}
       {show.blackout && L.armed && <p className="hint" style={{ marginBottom: 10 }}>Blackout is on: lasers are dark until it is lifted.</p>}
+      <div className="looks" style={{ marginBottom: 10 }}>
+        <div className="hint" style={{ marginBottom: 6 }}>Looks</div>
+        <div className="chips">
+          {LASER_LOOKS.map((l) => <button key={l.id} className={`btn sm ${L.look === l.id ? "active" : ""}`} disabled={!admin} title={l.description} onClick={() => send({ type: "setLaserLook", lookId: L.look === l.id ? null : l.id })}>{l.name}{l.animated ? " ·" : ""}</button>)}
+        </div>
+        {L.look && <div className="hint" style={{ marginTop: 6 }}>{LASER_LOOKS.find((l) => l.id === L.look)?.description} Adjusting a laser by hand stops the look.</div>}
+      </div>
       <div className="stack">
         {lasers.map((f) => <LaserRow key={f.id} id={f.id} name={f.name} state={L.fixtures[f.id] ?? defaultLaserState()} armed={L.armed} blackout={show.blackout} editable={admin} onChange={(patch) => send({ type: "setLaser", fixtureId: f.id, state: patch })} />)}
       </div>

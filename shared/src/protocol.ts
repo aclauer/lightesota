@@ -48,6 +48,8 @@ export type ClientMessage =
   | { type: "armLasers"; armed: boolean }
   /** Change one laser's preset (admin). Partial; invalid values are ignored. */
   | { type: "setLaser"; fixtureId: string; state: Partial<LaserState> }
+  /** Apply a named look to all enabled lasers, or null to stop it and keep the current states (admin). */
+  | { type: "setLaserLook"; lookId: string | null }
   /** Everything off and disarmed. Anyone with control can do this. */
   | { type: "lasersOff" }
   | { type: "setReleased"; released: boolean }

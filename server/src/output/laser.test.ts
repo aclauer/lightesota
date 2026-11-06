@@ -65,3 +65,15 @@ test("lasers are excluded from the pattern engine and old protected ranges migra
   // Running it again is a no-op.
   assert.equal(migrateRig(m.rig).changed, false);
 });
+
+test("every look at every time and beat stays inside the approved vocabulary", async () => {
+  const { LASER_LOOKS, sanitizeLaserState: san } = await import("../../../shared/src/index.js");
+  for (const look of LASER_LOOKS) {
+    for (let t = 0; t < 40; t += 0.37) for (let b = 0; b < 17; b += 1) for (let i = 0; i < 2; i++) {
+      const s = look.at(t, b, i, 2);
+      assert.deepEqual(s, san(s), `${look.id} at t=${t} beat=${b} laser ${i} produced an unapproved state`);
+      const bytes = laserBytes(s, true, false);
+      if (s.mode === "manual") { assert.equal(bytes[6], LASER_TILT); assert.equal(bytes[4], LASER_ZOOM); assert.equal(bytes[3], 0); assert.ok(bytes[5] >= LASER_PAN_MIN && bytes[5] <= LASER_PAN_MAX); }
+    }
+  }
+});

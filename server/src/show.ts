@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { nanoid } from "nanoid";
 import {
-  defaultParams, sanitizeParams, defaultLasersState, defaultLaserState, sanitizeLaserState, laserFixtures,
+  defaultParams, sanitizeParams, defaultLasersState, defaultLaserState, sanitizeLaserState, laserFixtures, findLaserLook,
   type AudioFrame, type LaserState, type FixtureOverride, type ParamValues, type Rig, type Scene, type Settings, type ShowState, type Playlist,
 } from "../../shared/src/index.js";
 import { Engine } from "./engine/engine.js";
@@ -45,6 +45,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
       lasers: defaultLasersState(),
     };
     setInterval(() => this.audioTick(), 500).unref();
+    setInterval(() => this.laserLookTick(), 100).unref();
     this.engine.on("patternLoaded", ({ id, params }) => {
       if (id === this.state.patternId) { this.state.params = params; this.state.outgoingPatternId = null; this.changed(); }
     });
@@ -219,14 +220,47 @@ export class ShowController extends EventEmitter<ShowEvents> {
     if (!laserFixtures(this.getRig()).some((f) => f.id === fixtureId)) throw new Error("Not an enabled laser fixture");
     const prev = this.state.lasers.fixtures[fixtureId] ?? defaultLaserState();
     this.state.lasers.fixtures[fixtureId] = sanitizeLaserState({ ...prev, ...patch }, prev);
+    this.state.lasers.look = null; // a hand edit takes over from any look
     this.changed();
+  }
+  /** Apply a look: static ones are written once, animated ones are re-evaluated by laserLookTick. */
+  setLaserLook(lookId: string | null) {
+    if (lookId === null) { this.state.lasers.look = null; this.changed(); return; }
+    const look = findLaserLook(lookId);
+    if (!look) throw new Error(`Unknown laser look ${lookId}`);
+    this.state.lasers.look = look.id;
+    this.applyLook(true);
+    this.changed();
+  }
+  private lookStart = Date.now();
+  private applyLook(reset = false) {
+    const look = findLaserLook(this.state.lasers.look);
+    if (!look) return;
+    if (reset) this.lookStart = Date.now();
+    const lasers = laserFixtures(this.getRig());
+    const t = (Date.now() - this.lookStart) / 1000;
+    const beat = this.engine.beat;
+    let changed = false;
+    lasers.forEach((f, i) => {
+      const next = sanitizeLaserState(look.at(t, beat, i, lasers.length));
+      const prev = this.state.lasers.fixtures[f.id];
+      if (!prev || prev.mode !== next.mode || prev.pattern !== next.pattern || prev.color !== next.color || prev.pan !== next.pan || prev.musicColor !== next.musicColor) {
+        this.state.lasers.fixtures[f.id] = next; changed = true;
+      }
+    });
+    return changed;
+  }
+  private laserLookTick() {
+    const look = findLaserLook(this.state.lasers.look);
+    if (!look || !look.animated || !this.state.lasers.armed) return;
+    if (this.applyLook()) this.changed();
   }
   /** Every laser to its dark state and the arm dropped. */
   lasersOff(by: string) {
     const L = this.state.lasers;
     const wasArmed = L.armed;
     for (const id of Object.keys(L.fixtures)) L.fixtures[id] = { ...L.fixtures[id], mode: "off" };
-    L.armed = false; L.armedAt = null; L.armedBy = null;
+    L.armed = false; L.armedAt = null; L.armedBy = null; L.look = null;
     if (wasArmed) this.emit("toast", { level: "info", text: `Lasers off (${by || "control"})` });
     this.changed();
   }
