@@ -98,6 +98,9 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
           ctx.fillStyle = fg3; ctx.font = '11px "Manrope Variable", system-ui'; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(sh.text, X(sh.x), Y(sh.y));
         }
       }
+      // Light stays inside the room: glows and laser fans are clipped to the floor rectangle.
+      ctx.save();
+      ctx.beginPath(); ctx.rect(X(0), Y(0), rig.room.width * s.scale, rig.room.height * s.scale); ctx.clip();
       // Laser fans: drawn under everything so the beam reads as light on the floor.
       if (live && lasers) {
         for (const f of rig.fixtures) {
@@ -143,6 +146,7 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
           ctx.fillRect(X(f.x) - glow, Y(f.y) - glow, glow * 2, glow * 2);
         }
       }
+      ctx.restore(); // end of room clip
       // Fixtures
       ctx.font = '11px "Manrope Variable", system-ui'; ctx.textAlign = "center"; ctx.textBaseline = "top";
       for (let i = 0; i < rig.fixtures.length; i++) {
