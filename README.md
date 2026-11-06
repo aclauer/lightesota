@@ -35,7 +35,9 @@ Or with Docker (host networking so UDP reaches the ODE):
 docker compose up -d --build
 ```
 
-Configuration is by environment variables, see [.env.example](.env.example). Everything the app
+Configuration is by environment variables, see [.env.example](.env.example). A `.env` file in the
+repo root is loaded automatically by `npm start` and `npm run dev` (it is git-ignored). The agent
+needs `ANTHROPIC_API_KEY` there; restart the server after adding it. Everything the app
 stores (rig, scenes, playlists, your patterns, agent chats, share tokens) lives in `data/` as
 JSON and JavaScript files.
 
