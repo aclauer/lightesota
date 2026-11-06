@@ -23,7 +23,7 @@ export function MiniStage() {
       </div>
       {!collapsed && (
         <div className="pip-stage" onClick={() => setView("live")} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && setView("live")} title="Click to open Live">
-          <Stage rig={rig} mode="live" selectedId={null} showLabels={false} />
+          <Stage rig={rig} mode="live" selectedId={null} showLabels={false} compact />
         </div>
       )}
     </div>

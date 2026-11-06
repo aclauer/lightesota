@@ -12,20 +12,22 @@ interface Props {
   showLabels?: boolean;
   /** Draws fixtures with preview colors (from the store frame). */
   live?: boolean;
+  /** Tight padding, no scale bar: for the picture-in-picture preview. */
+  compact?: boolean;
 }
 
 /** Top-down room canvas used for both the live preview and the stage editor. */
-export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = true, live = true }: Props) {
+export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = true, live = true, compact = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const state = useRef({ scale: 40, ox: 0, oy: 0, w: 0, h: 0, dpr: 1, drag: null as null | { id: string; dx: number; dy: number; moved: boolean }, pan: null as null | { x: number; y: number; ox: number; oy: number }, hover: null as string | null });
-  const propsRef = useRef({ rig, mode, selectedId, onSelect, onMove, showLabels, live });
-  propsRef.current = { rig, mode, selectedId, onSelect, onMove, showLabels, live };
+  const propsRef = useRef({ rig, mode, selectedId, onSelect, onMove, showLabels, live, compact });
+  propsRef.current = { rig, mode, selectedId, onSelect, onMove, showLabels, live, compact };
 
   // Fit room to canvas whenever size or room changes.
   const fit = () => {
     const s = state.current;
-    const { rig } = propsRef.current;
-    const pad = 36;
+    const { rig, compact } = propsRef.current;
+    const pad = compact ? 10 : 36;
     const sx = (s.w - pad * 2) / rig.room.width, sy = (s.h - pad * 2) / rig.room.height;
     s.scale = Math.max(4, Math.min(sx, sy));
     s.ox = (s.w - rig.room.width * s.scale) / 2;
@@ -56,7 +58,7 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
       if (!canvas) return;
       const ctx = canvas.getContext("2d")!;
       const s = state.current;
-      const { rig, mode, selectedId, showLabels, live } = propsRef.current;
+      const { rig, mode, selectedId, showLabels, live, compact } = propsRef.current;
       const frame = useStore.getState().frame;
       const enabled = rig.fixtures.filter((f) => f.enabled);
       const css = getComputedStyle(canvas);
@@ -145,6 +147,7 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
           if (mode === "edit" && f.address) { ctx.strokeText(`@${f.address}`, cx, cy + r + 19); ctx.fillStyle = "#b9b7b0"; ctx.fillText(`@${f.address}`, cx, cy + r + 19); }
         }
       }
+      if (compact) return;
       // Scale bar (bottom right)
       ctx.fillStyle = fg3; ctx.font = "10px system-ui"; ctx.textAlign = "right"; ctx.textBaseline = "bottom";
       ctx.fillRect(s.w - 12 - s.scale, s.h - 12, s.scale, 2);
