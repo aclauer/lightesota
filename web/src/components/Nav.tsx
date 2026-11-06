@@ -16,9 +16,11 @@ export function Nav() {
   const setView = useStore((s) => s.setView);
   const can = useStore((s) => s.can);
   const role = useStore((s) => s.role);
+  const guestAgent = useStore((s) => s.settings?.agent.guestAccess ?? false);
+  const visible = (i: typeof items[number]) => !i.min || can(i.min) || (i.id === "agent" && guestAgent && can("guest"));
   return (
     <nav className="nav" aria-label="Sections">
-      {items.filter((i) => !i.min || can(i.min)).map((i) => (
+      {items.filter(visible).map((i) => (
         <button key={i.id} className={view === i.id ? "active" : ""} onClick={() => setView(i.id)} aria-current={view === i.id ? "page" : undefined}>
           <i.icon strokeWidth={1.8} />
           <span>{i.label}</span>

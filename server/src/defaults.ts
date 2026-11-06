@@ -50,7 +50,7 @@ export function defaultSettings(): Settings {
       upstream: { enabled: false, listenPort: 6454, allowFrom: "" },
     },
     hue: { enabled: false, bridgeIp: "10.10.0.103", username: "", rateHz: 8 },
-    agent: { model: "claude-opus-5-5", effort: "medium", allowApply: true },
+    agent: { model: "claude-sonnet-5-5", effort: "medium", allowApply: true, guestAccess: true, guestIntervalSec: 30, guestTotalPerHour: 60 },
     sharing: { guestPermission: "control", publicUrl: "", venueName: "Office" },
     previewFps: 20,
   };

@@ -30,7 +30,7 @@ const agent = new AgentService(
     getRig: () => rigFile.get(), getSettings: () => settingsFile.get(),
     onPatternSaved: (id) => show.patternUpdated(id),
   },
-  (ev) => hub?.broadcastRole("editor", { type: "agent", event: ev }),
+  (ev) => hub?.broadcastRole(hub.agentAudience(), { type: "agent", event: ev }),
 );
 
 const ctx: AppContext = {

@@ -129,6 +129,15 @@ export function SettingsView() {
                 <div className="seg">{(["low", "medium", "high", "xhigh"] as const).map((e) => <button key={e} className={local.agent.effort === e ? "active" : ""} onClick={() => save({ agent: { ...local.agent, effort: e } })}>{e}</button>)}</div>
               </label>
               <label className="row"><button className={`switch ${local.agent.allowApply ? "on" : ""}`} role="switch" aria-checked={local.agent.allowApply} onClick={() => save({ agent: { ...local.agent, allowApply: !local.agent.allowApply } })} /> Agent may apply patterns and change the live show</label>
+              <div className="divider" />
+              <label className="row"><button className={`switch ${local.agent.guestAccess ? "on" : ""}`} role="switch" aria-checked={local.agent.guestAccess} onClick={() => save({ agent: { ...local.agent, guestAccess: !local.agent.guestAccess } })} /> Guests may use the agent (rate limited)</label>
+              {local.agent.guestAccess && (
+                <div className="row nowrap">
+                  <label className="field" style={{ flex: 1 }}><span>Seconds between prompts per guest</span><input className="input tabular" type="number" min={1} max={600} value={local.agent.guestIntervalSec} onChange={(e) => setLocal({ ...local, agent: { ...local.agent, guestIntervalSec: Number(e.target.value) } })} onBlur={() => save({ agent: local.agent })} /></label>
+                  <label className="field" style={{ flex: 1 }}><span>All guests together / hour</span><input className="input tabular" type="number" min={1} max={1000} value={local.agent.guestTotalPerHour} onChange={(e) => setLocal({ ...local, agent: { ...local.agent, guestTotalPerHour: Number(e.target.value) } })} onBlur={() => save({ agent: local.agent })} /></label>
+                </div>
+              )}
+              <p className="hint">Each prompt costs a few cents on {local.agent.model.includes("opus") ? "Opus" : local.agent.model.includes("haiku") ? "Haiku" : "Sonnet"}. Editors and admins are not limited.</p>
             </div>
           </div>
         )}

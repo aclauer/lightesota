@@ -8,13 +8,38 @@ import { deepMerge } from "../store.js";
 import type { AppContext } from "./context.js";
 import { validateRig } from "./validate.js";
 
-interface Client { ws: WebSocket; id: string; role: Role; name: string; color: string; connectedAt: number; wantsDmx: boolean; alive: boolean; }
+interface Client { ws: WebSocket; id: string; role: Role; name: string; color: string; connectedAt: number; wantsDmx: boolean; alive: boolean; ip: string; }
 
+/** Sliding-window counter keyed by string (per device ip, or "*" for everyone). */
+class RateLimiter {
+  private hits = new Map<string, number[]>();
+  /** Returns 0 if allowed (and records the hit), else seconds until the next slot. */
+  take(key: string, limit: number, windowMs = 3600_000): number {
+    const now = Date.now();
+    const list = (this.hits.get(key) ?? []).filter((t) => now - t < windowMs);
+    if (list.length >= limit) { this.hits.set(key, list); return Math.ceil((list[0] + windowMs - now) / 1000); }
+    list.push(now);
+    this.hits.set(key, list);
+    return 0;
+  }
+  private last = new Map<string, number>();
+  /** Cooldown: returns 0 if at least `sec` seconds passed since the last hit for key (and records it), else seconds to wait. */
+  cooldown(key: string, sec: number): number {
+    const now = Date.now();
+    const prev = this.last.get(key) ?? 0;
+    if (now - prev < sec * 1000) return Math.ceil((prev + sec * 1000 - now) / 1000);
+    this.last.set(key, now);
+    return 0;
+  }
+}
+
+const fmtWait = (s: number) => (s < 90 ? `${s} s` : `${Math.ceil(s / 60)} min`);
 const COLORS = ["#ff6b6b", "#ffa94d", "#ffd43b", "#69db7c", "#38d9a9", "#4dabf7", "#9775fa", "#f783ac", "#63e6be", "#a9e34b"];
 
 export class WsHub {
   private wss: WebSocketServer;
   private clients = new Map<string, Client>();
+  private limiter = new RateLimiter();
   private lastFrameSent = 0;
   private lastDmxSent = 0;
 
@@ -23,7 +48,8 @@ export class WsHub {
     this.wss.on("connection", (ws, req) => {
       const role = ctx.auth.roleForRequest(req);
       const id = nanoid(8);
-      const client: Client = { ws, id, role, name: `Guest ${this.clients.size + 1}`, color: COLORS[this.clients.size % COLORS.length], connectedAt: Date.now(), wantsDmx: false, alive: true };
+      const ip = (typeof req.headers["x-forwarded-for"] === "string" ? req.headers["x-forwarded-for"].split(",")[0].trim() : "") || req.socket.remoteAddress || "?";
+      const client: Client = { ws, id, role, name: `Guest ${this.clients.size + 1}`, color: COLORS[this.clients.size % COLORS.length], connectedAt: Date.now(), wantsDmx: false, alive: true, ip };
       this.clients.set(id, client);
       this.send(client, { type: "hello", clientId: id, role, serverTime: Date.now(), name: client.name });
       this.send(client, this.snapshot(client.role));
@@ -231,9 +257,24 @@ export class WsHub {
     }
   }
 
+  /** Who receives agent events: editors and admins always, guests when guest access is on. */
+  agentAudience(): Role { return this.ctx.settingsFile.get().agent.guestAccess ? "guest" : "editor"; }
+
   private handleAgent(client: Client, cmd: ClientMessage extends infer T ? T extends { type: "agent"; command: infer C } ? C : never : never) {
     const agent = this.ctx.agent;
     const sendTo = (ev: Parameters<typeof agent["broadcast"]>[0]) => this.send(client, { type: "agent", event: ev });
+    const isGuest = !roleAllows(client.role, "editor");
+    if (isGuest) {
+      const a = this.ctx.settingsFile.get().agent;
+      if (!a.guestAccess) throw new Error("The agent is not open to guests right now");
+      if (cmd.type === "delete") throw new Error("Guests cannot delete conversations");
+      if (cmd.type === "send") {
+        const wait = this.limiter.cooldown(client.ip, Math.max(1, a.guestIntervalSec));
+        if (wait) throw new Error(`One prompt every ${a.guestIntervalSec} s per person. Try again in ${fmtWait(wait)}.`);
+        const waitAll = this.limiter.take("*", Math.max(1, a.guestTotalPerHour));
+        if (waitAll) throw new Error(`The room has used its agent budget for this hour. Try again in ${fmtWait(waitAll)}.`);
+      }
+    }
     switch (cmd.type) {
       case "list": sendTo({ type: "conversations", conversations: agent.list() }); return;
       case "new": { const c = agent.create(); const { history: _h, ...pub } = c; sendTo({ type: "conversation", conversation: pub }); sendTo({ type: "conversations", conversations: agent.list() }); return c.id; }

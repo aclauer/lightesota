@@ -79,9 +79,11 @@ export function requiredRole(msg: ClientMessage): Role {
     case "playPlaylist": case "stopPlaylist": case "playlistNext": case "playlistPrev":
     case "testFixture": case "audio": case "setFollowMicBpm": case "setSleep":
       return "guest";
+    case "agent":
+      return "guest"; // guests are further gated by settings.agent.guestAccess and rate limits
     case "saveScene": case "updateScene": case "deleteScene": case "reorderScenes":
     case "savePlaylist": case "deletePlaylist": case "savePattern": case "deletePattern":
-    case "duplicatePattern": case "agent":
+    case "duplicatePattern":
       return "editor";
     default:
       return "admin";

@@ -261,6 +261,12 @@ export interface AgentSettings {
   effort: "low" | "medium" | "high" | "xhigh" | "max";
   /** When false the agent may not auto-apply patterns. */
   allowApply: boolean;
+  /** Guests (control level) may send prompts, subject to the limits below. */
+  guestAccess: boolean;
+  /** Minimum seconds between prompts from one guest device. */
+  guestIntervalSec: number;
+  /** Prompts from all guests together per hour. */
+  guestTotalPerHour: number;
 }
 
 export interface SharingSettings {
