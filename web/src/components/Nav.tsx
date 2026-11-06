@@ -1,0 +1,31 @@
+import { Bot, Film, LayoutGrid, ListMusic, Map, Play, Settings } from "lucide-react";
+import { useStore, type View } from "../state/store";
+
+const items: { id: View; label: string; icon: typeof Play; min?: "admin" | "editor" }[] = [
+  { id: "live", label: "Live", icon: Play },
+  { id: "patterns", label: "Patterns", icon: LayoutGrid },
+  { id: "scenes", label: "Scenes", icon: Film },
+  { id: "playlists", label: "Playlists", icon: ListMusic },
+  { id: "agent", label: "Agent", icon: Bot, min: "editor" },
+  { id: "stage", label: "Stage", icon: Map, min: "admin" },
+  { id: "settings", label: "Settings", icon: Settings },
+];
+
+export function Nav() {
+  const view = useStore((s) => s.view);
+  const setView = useStore((s) => s.setView);
+  const can = useStore((s) => s.can);
+  const role = useStore((s) => s.role);
+  return (
+    <nav className="nav" aria-label="Sections">
+      {items.filter((i) => !i.min || can(i.min)).map((i) => (
+        <button key={i.id} className={view === i.id ? "active" : ""} onClick={() => setView(i.id)} aria-current={view === i.id ? "page" : undefined}>
+          <i.icon strokeWidth={1.8} />
+          <span>{i.label}</span>
+        </button>
+      ))}
+      <div className="grow" />
+      <div className="desktop-only faint" style={{ fontSize: 10.5, textAlign: "center", padding: "6px 0" }}>{role}</div>
+    </nav>
+  );
+}

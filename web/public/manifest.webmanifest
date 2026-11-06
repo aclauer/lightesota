@@ -1,0 +1,13 @@
+{
+  "name": "Lightesota",
+  "short_name": "Lightesota",
+  "description": "Office lighting console",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0e0f14",
+  "theme_color": "#0e0f14",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
