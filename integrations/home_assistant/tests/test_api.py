@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).parents[1] / "custom_components" / "lightesota"))
 from api import (ApiError, Client, StaleCommand, parse_state, wash_on_patch,
-                 laser_effect_state, context_timestamp)
+                 laser_effect_state, context_timestamp, validate_origin)
 
 
 def state(generation=100):
@@ -21,6 +21,17 @@ def state(generation=100):
 
 
 class ContractTests(unittest.TestCase):
+    def test_origin_rejects_invalid_ports_and_non_origins(self):
+        for valid in ("https://lightesota.invalid", "http://127.0.0.1:8787", "https://[::1]:443"):
+            self.assertEqual(validate_origin(valid + "/"), valid)
+        for bad in ("https://lightesota.invalid:notaport", "https://lightesota.invalid:65536",
+                    "https://lightesota.invalid:-1", "https://lightesota.invalid:0",
+                    "http://[::1", "ftp://lightesota.invalid", "https://lightesota.invalid/path",
+                    "https://user:synthetic@lightesota.invalid", "https://lightesota.invalid?x=1",
+                    "https://lightesota.invalid#fragment", "", None):
+            with self.subTest(origin=bad), self.assertRaises(ApiError):
+                validate_origin(bad)
+
     def test_brightness_keeps_music_and_color_returns_normal(self):
         wash = state()["washes"]["w1"]
         self.assertEqual(wash_on_patch(wash, brightness=25), {"brightness": 25})

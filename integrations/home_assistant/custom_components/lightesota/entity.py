@@ -1,5 +1,6 @@
 """Shared availability and command plumbing."""
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.script import script_stack_cv
 from homeassistant.exceptions import HomeAssistantError
 from .api import DOMAIN
 
@@ -38,5 +39,8 @@ class LightesotaEntity(CoordinatorEntity):
         context = self._context
         user_id = context.user_id if context else None
         user = await self.hass.auth.async_get_user(user_id) if user_id else None
-        if user is None or not user.is_admin or (direct and context.parent_id is not None):
+        # Native scripts may preserve the caller's admin Context with no parent.
+        # Their execution stack, not parent_id alone, distinguishes them here.
+        scripted = direct and bool(script_stack_cv.get())
+        if user is None or not user.is_admin or (direct and context.parent_id is not None) or scripted:
             raise HomeAssistantError("Laser control requires an explicit action by a Home Assistant administrator")

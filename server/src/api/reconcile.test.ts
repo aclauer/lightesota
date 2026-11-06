@@ -139,3 +139,12 @@ test('commanded state follows final packing and output gates rather than staged 
   assert.equal(controlState(ctx).lasers.fixtures.l1.mode,'off');
   assert.equal(controlState(ctx).lasers.fixtures.l1.requestedMode,'manual');
 });
+
+test('the output frame observes the current typed laser result, including Off on failure', (t) => {
+  const {show,load,follow,frame,internal} = setup(t);
+  show.armLasers(true,'operator'); load(); follow(); show.engine.emit('lasers',frame());
+  const observed: string[]=[];
+  show.engine.once('frame',()=>observed.push(show.state.lasers.fixtures.l1.mode));
+  internal.onWorkerMessage({type:'frame',buf:new Float32Array(32),errorA:'render failed',errorB:null,renderMs:0,logs:[],lasers:[],revision:show.engine.patternRevision,generation:show.engine.patternGeneration});
+  assert.equal(observed[0],'off','the same output frame must see Off, without one stale laser frame');
+});

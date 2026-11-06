@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
-from urllib.parse import urlsplit
 
 import voluptuous as vol
 from homeassistant.const import CONF_TOKEN, CONF_URL
@@ -11,17 +10,16 @@ from homeassistant.helpers import config_validation as cv, discovery
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import ApiError, Client, DOMAIN
+from .api import ApiError, Client, DOMAIN, validate_origin
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def _url(value):
-    value = cv.string(value).rstrip("/")
-    parsed = urlsplit(value)
-    if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path:
-        raise vol.Invalid("Use an http(s) origin without credentials, query or path")
-    return value
+    try:
+        return validate_origin(cv.string(value))
+    except ApiError as err:
+        raise vol.Invalid(str(err)) from None
 
 
 CONFIG_SCHEMA = vol.Schema({

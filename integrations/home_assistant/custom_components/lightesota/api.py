@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import urlsplit
 
 DOMAIN = "lightesota"
 WASH_EFFECTS = {"Normal": "normal", "Music6": "music6", "Music32": "music32"}
@@ -18,6 +19,23 @@ class ApiError(Exception):
 
 class StaleCommand(ApiError):
     """Caller must make a new deliberate action; this intent must never be replayed."""
+
+
+def validate_origin(value: str) -> str:
+    """Validate the whole transport origin, including the lazily parsed port."""
+    if not isinstance(value, str):
+        raise ApiError("Use a valid http(s) origin")
+    value = value.rstrip("/")
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        raise ApiError("Use a valid http(s) origin") from None
+    if (parsed.scheme not in ("http", "https") or not parsed.hostname
+            or parsed.username or parsed.password or parsed.query or parsed.fragment
+            or parsed.path or port == 0):
+        raise ApiError("Use an http(s) origin without credentials, query or path")
+    return value
 
 
 def _integer(value: Any, low: int, high: int) -> bool:

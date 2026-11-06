@@ -262,8 +262,10 @@ export class Engine extends EventEmitter<EngineEvents> {
         const err = m.errorA ?? undefined;
         if (err !== this.patternError) { this.patternError = err; this.emitStatus(); }
         this.lastRaw = m.buf;
-        this.publishFrame(m.buf);
+        // The output subscriber must pack this reply's laser state, including a fail-closed Off,
+        // in the same frame rather than sending the preceding emitting intent once more.
         if (m.lasers !== undefined) this.emit("lasers", { states: m.lasers ?? [], id: this.currentId, revision: m.revision, generation: m.generation });
+        this.publishFrame(m.buf);
         break;
       }
     }

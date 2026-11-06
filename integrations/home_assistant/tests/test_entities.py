@@ -5,6 +5,7 @@ import sys
 import types
 import unittest
 from enum import IntFlag, StrEnum
+from contextvars import ContextVar
 from unittest.mock import AsyncMock
 
 from test_api import state
@@ -39,6 +40,8 @@ class LightEntityFeature(IntFlag):
 module("homeassistant")
 module("homeassistant.components")
 module("homeassistant.helpers")
+script_stack: ContextVar[list[str] | None] = ContextVar("script_stack", default=None)
+module("homeassistant.helpers.script", script_stack_cv=script_stack)
 module("homeassistant.helpers.update_coordinator", CoordinatorEntity=CoordinatorEntity)
 module("homeassistant.exceptions", HomeAssistantError=HomeAssistantError)
 module("homeassistant.components.light", ATTR_BRIGHTNESS="brightness", ATTR_EFFECT="effect", ATTR_RGBW_COLOR="rgbw_color",
@@ -114,6 +117,21 @@ class EntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(stop.available)
         await stop.async_press()
         self.assertEqual(c.execute.call_args.args[0], {"type": "stopLighting"})
+
+    async def test_script_cannot_arm_with_inherited_root_admin_context(self):
+        c = coordinator(); arm = switch.LaserArm(c)
+        token = script_stack.set(["script.synthetic_arm"])
+        try:
+            with self.assertRaises(HomeAssistantError):
+                await arm.async_turn_on()
+            c.execute.assert_not_called()
+            await arm.async_turn_off()
+            self.assertEqual(c.execute.call_args.args[0], {"type": "lasersOff"})
+        finally:
+            script_stack.reset(token)
+        c.execute.reset_mock()
+        await arm.async_turn_on()
+        self.assertEqual(c.execute.call_args.args[0], {"type": "armLasers", "armed": True})
 
     async def test_sensitivity_and_pan_are_bounded_without_implicit_start(self):
         c = coordinator(); sensitivity = number.Sensitivity(c, "w1", 1); pan = number.Pan(c, "l1", 1)
