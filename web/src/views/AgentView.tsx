@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, Check, Loader2, Plus, Send, Square, Trash2, Wrench, X } from "lucide-react";
 import type { AgentChatMessage, AgentToolCall } from "@lightesota/shared";
 import { useStore } from "../state/store";
@@ -74,11 +74,31 @@ export function AgentView() {
   );
 }
 
+/** Minimal markdown: paragraphs, "- " bullets, **bold**, `code`. Enough for the agent's short replies. */
+function renderMd(text: string) {
+  const inline = (line: string, key: number) => {
+    const parts = line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+    return <span key={key}>{parts.map((p, i) => p.startsWith("**") ? <b key={i}>{p.slice(2, -2)}</b> : p.startsWith("`") ? <code key={i}>{p.slice(1, -1)}</code> : p)}</span>;
+  };
+  const blocks: ReactNode[] = [];
+  let list: string[] = [];
+  const flush = () => { if (list.length) { blocks.push(<ul key={blocks.length} style={{ margin: "4px 0", paddingLeft: 18 }}>{list.map((l, i) => <li key={i}>{inline(l, i)}</li>)}</ul>); list = []; } };
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    if (/^\s*[-*] /.test(line)) { list.push(line.replace(/^\s*[-*] /, "")); continue; }
+    flush();
+    if (line.trim() === "") { blocks.push(<div key={blocks.length} style={{ height: 6 }} />); continue; }
+    blocks.push(<div key={blocks.length}>{inline(line, 0)}</div>);
+  }
+  flush();
+  return blocks;
+}
+
 function Message({ m }: { m: AgentChatMessage }) {
   return (
     <div className={`msg ${m.role}`}>
       {m.toolCalls.map((c) => <ToolCall key={c.id} c={c} />)}
-      {(m.text || m.streaming) && <div className="bubble">{m.text}{m.streaming && !m.text && <Loader2 className="spin" style={{ width: 14, height: 14, verticalAlign: "middle" }} />}</div>}
+      {(m.text || m.streaming) && <div className="bubble" style={{ whiteSpace: "normal" }}>{m.role === "assistant" ? renderMd(m.text) : m.text}{m.streaming && !m.text && <Loader2 className="spin" style={{ width: 14, height: 14, verticalAlign: "middle" }} />}</div>}
       {m.error && <div className="err">{m.error}</div>}
     </div>
   );
