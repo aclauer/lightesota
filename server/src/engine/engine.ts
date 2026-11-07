@@ -288,7 +288,8 @@ export class Engine extends EventEmitter<EngineEvents> {
       const o = i * OUT_STRIDE;
       let r = raw[o] ?? 0, g = raw[o + 1] ?? 0, b = raw[o + 2] ?? 0, w = raw[o + 3] ?? 0, a = raw[o + 4] ?? 0, uv = raw[o + 5] ?? 0;
       let dim = raw[o + 6] ?? 0, strobe = raw[o + 7] ?? 0;
-      const ov = this.overrides[f.id];
+      const key = f.parentId ?? f.id; // gradient strip segments share their strip's override and solo
+      const ov = this.overrides[key];
       if (ov) {
         const k = ov.mix ?? 1;
         if (ov.r !== undefined) r = r + (ov.r - r) * k;
@@ -300,7 +301,7 @@ export class Engine extends EventEmitter<EngineEvents> {
         if (ov.dim !== undefined) dim = dim + (ov.dim - dim) * k;
         if (ov.r !== undefined || ov.g !== undefined || ov.b !== undefined) strobe = 0;
       }
-      if (soloing && !this.solo.has(f.id)) dim = 0;
+      if (soloing && !this.solo.has(key)) dim = 0;
       dim *= this.master * (f.trim ?? 1);
       if (this.blackout) dim = 0;
       values[o] = r; values[o + 1] = g; values[o + 2] = b; values[o + 3] = w; values[o + 4] = a; values[o + 5] = uv;
