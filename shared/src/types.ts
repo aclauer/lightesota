@@ -44,6 +44,12 @@ export interface FixtureProfile {
   /** Default drawing size on the stage (meters). */
   size?: number;
   shape?: "circle" | "square" | "bar";
+  /**
+   * Hue gradient strips: how many independently colored points the device accepts along its
+   * length. The engine expands such a fixture into that many virtual fixtures (see engineFixtures),
+   * so patterns paint each point and the strip blends between them.
+   */
+  gradientPoints?: number;
   notes?: string;
 }
 
@@ -64,6 +70,10 @@ export interface Fixture {
   enabled: boolean;
   /** Optional per-fixture color/intensity trim 0..1. */
   trim?: number;
+  /** Set only on engine-expanded virtual fixtures (gradient strip points); never saved. */
+  parentId?: string;
+  segment?: number;
+  segments?: number;
 }
 
 export interface StageRoom {
@@ -346,4 +356,6 @@ export interface HueLightInfo {
   type: string;
   reachable: boolean;
   on: boolean;
+  /** Gradient-capable lights: number of color points the bridge accepts. */
+  gradientPoints?: number;
 }

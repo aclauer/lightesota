@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useEffect, useState as useStateReact } from "react";
 import { Code2, Flashlight, Mic, MicOff, Moon, RotateCcw, Save, X } from "lucide-react";
-import { findProfile, engineFixtures, isLaserProfile, isHazeProfile, type FixtureOverride } from "@lightesota/shared";
+import { findProfile, engineIndexOf, isLaserProfile, isHazeProfile, type FixtureOverride } from "@lightesota/shared";
 import { LasersCard } from "../components/LasersCard";
 import { HazeCard } from "../components/HazeCard";
 import { useStore } from "../state/store";
@@ -233,7 +233,7 @@ function FixtureInspector({ id, onClose }: { id: string; onClose: () => void }) 
   if (!f) return null;
   const control = can("guest");
   const profile = findProfile(f.profileId, rig.customProfiles);
-  const idx = engineFixtures(rig).indexOf(f);
+  const idx = engineIndexOf(rig, f.id);
   const c = idx >= 0 ? frame[idx] : undefined;
   const ov: FixtureOverride | undefined = show.overrides[f.id];
   const soloed = show.solo.includes(f.id);

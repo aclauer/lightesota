@@ -136,3 +136,25 @@ test("haze bytes are zero unless armed and inside a run, and never exceed the ru
   const s = sanitizeHaze({ fan: 9, output: -2 }, h);
   assert.equal(s.fan, 1); assert.equal(s.output, 0);
 });
+
+test("gradient strips expand into evenly spaced virtual fixtures and fold back to one strip", async () => {
+  const rig: Rig = {
+    room: { name: "t", width: 10, height: 8, gridStep: 0.5, shapes: [] }, customProfiles: [], protectedRanges: [],
+    fixtures: [
+      { id: "w1", name: "Wash 1", profileId: "chauvet-slimpar-pro-h-12ch", universe: 0, address: 101, x: 0, y: 0, rotation: 0, tags: [], enabled: true },
+      { id: "hue1", name: "Strip 5", profileId: "hue-gradient-strip", hueLightId: "1", x: 5, y: 7.4, rotation: 0, tags: ["strip"], enabled: true },
+    ],
+  };
+  const { engineIndexOf } = await import("../../../shared/src/index.js");
+  const ef = engineFixtures(rig);
+  assert.equal(ef.length, 6);
+  const segs = ef.filter((f) => f.parentId === "hue1");
+  assert.equal(segs.length, 5);
+  assert.deepEqual(segs.map((f) => f.segment), [0, 1, 2, 3, 4]);
+  assert.ok(segs[0].x < segs[4].x && Math.abs(segs[2].x - 5) < 1e-9, "points run along the bar, centered on the fixture");
+  assert.ok(segs.every((f) => f.hueLightId === "1" && f.tags.includes("segment")));
+  assert.equal(engineIndexOf(rig, "hue1"), 1);
+  const { resample } = await import("./hue.js");
+  assert.deepEqual(resample([[0, 0], [1, 1]], 3), [[0, 0], [0.5, 0.5], [1, 1]]);
+  assert.equal(resample([[0, 0], [0.2, 0.2], [0.4, 0.4], [0.6, 0.6], [0.8, 0.8], [1, 1]], 5).length, 5);
+});

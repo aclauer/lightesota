@@ -76,9 +76,34 @@ export function isLaserFixture(f: Fixture, rig: Rig): boolean {
   return isLaserProfile(findProfile(f.profileId, rig.customProfiles));
 }
 
-/** Fixtures the pattern engine drives: enabled lights only (no lasers, no hazer). Frames are indexed in this order. */
+/**
+ * Fixtures the pattern engine drives: enabled lights only (no lasers, no hazer). Frames are indexed
+ * in this order. A gradient strip (profile.gradientPoints > 1) expands into that many virtual
+ * fixtures spaced along its bar, each painted by patterns like any other fixture; the output stage
+ * folds them back into one gradient command per strip.
+ */
 export function engineFixtures(rig: Rig): Fixture[] {
-  return rig.fixtures.filter((f) => { if (!f.enabled) return false; const k = findProfile(f.profileId, rig.customProfiles)?.kind; return k !== "laser" && k !== "haze"; });
+  const out: Fixture[] = [];
+  for (const f of rig.fixtures) {
+    if (!f.enabled) continue;
+    const p = findProfile(f.profileId, rig.customProfiles);
+    if (p?.kind === "laser" || p?.kind === "haze") continue;
+    const n = Math.max(1, Math.min(32, Math.round(p?.gradientPoints ?? 1)));
+    if (n <= 1) { out.push(f); continue; }
+    // Bars are drawn size * 2.2 long (see Stage); place the points evenly along that line.
+    const len = (p?.size ?? 1) * 2.2;
+    const a = (f.rotation * Math.PI) / 180;
+    for (let i = 0; i < n; i++) {
+      const d = ((i / (n - 1)) - 0.5) * len;
+      out.push({ ...f, id: `${f.id}#${i}`, name: `${f.name} ${i + 1}`, parentId: f.id, segment: i, segments: n, x: f.x + Math.cos(a) * d, y: f.y + Math.sin(a) * d, tags: [...f.tags, "segment"] });
+    }
+  }
+  return out;
+}
+
+/** Index into engineFixtures() for a saved fixture: its own slot, or its first segment for gradient strips. */
+export function engineIndexOf(rig: Rig, fixtureId: string): number {
+  return engineFixtures(rig).findIndex((x) => x.id === fixtureId || x.parentId === fixtureId);
 }
 
 /** Enabled lasers in rig order. */
