@@ -176,14 +176,17 @@ export function compilePattern(source: string, opts: CompileOptions = {}): Compi
   };
 }
 
-/** Strip points (tag "strip") sorted along their line; u is assigned by rank so it survives any placement. */
-function stripsOf(fixtures: SandboxFixture[]): SandboxFixture[] {
+/**
+ * Strip points (tag "strip") in ring order around the room, counter-clockwise on the plan starting
+ * at the balcony's left end: balcony left to right, then up the right wall, then the Network wall
+ * right to left. u is assigned by rank, so a single row still reads 0..1 left to right and strips on
+ * several walls form one continuous run instead of interleaving.
+ */
+export function stripsOf(fixtures: SandboxFixture[]): SandboxFixture[] {
   const s = fixtures.filter((f) => f.tags.includes("strip") || f.tags.includes("segment"));
   if (s.length === 0) return s;
-  // Sort along the dominant axis of the stretch.
-  const xs = s.map((f) => f.x), ys = s.map((f) => f.y);
-  const horizontal = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
-  s.sort((a, b) => (horizontal ? a.x - b.x : a.y - b.y));
+  const key = (f: SandboxFixture) => ((Math.PI - f.angle) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+  s.sort((a, b) => key(a) - key(b));
   s.forEach((f, i) => { f.u = s.length === 1 ? 0.5 : i / (s.length - 1); });
   return s;
 }
