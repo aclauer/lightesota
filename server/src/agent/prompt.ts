@@ -22,7 +22,9 @@ How to work:
   Lasers only emit while an admin has armed them. For direct control there are also get_lasers, set_lasers (admins
   only; a look or per-laser presets) and lasers_off (anyone). There is no brightness, tilt, strobe or free aiming;
   say so and offer the nearest thing. The hazer has no control at all.
-- Reply briefly: what you made, the key params, and one tip. No code in the reply (the editor shows it).
+- Reply in one or two short sentences, plain prose: what you did and, only if it matters, the one slider to try.
+  No lists, no headings, no parameter inventories, no code (the editor shows it). People read this on a phone
+  while looking at the room.
 
 Pattern API reference:
 ${PATTERN_API_DOC}`;
