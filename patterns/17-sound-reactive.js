@@ -25,7 +25,17 @@ export default {
     if (onset) { s.flash = 1; if (p.colorMode === "onset") s.colorIdx++; }
     s.levelSmooth = lerp(s.levelSmooth, level, 1 - Math.exp(-ctx.dt * 12));
     const t = p.colorMode === "level" ? s.levelSmooth : p.colorMode === "highs" ? high : s.colorIdx / p.palette.length;
+    // Strips as a VU meter: the bar fills from the center outward with the level, bass pushes a
+    // brighter core, and a peak marker holds for a moment.
+    s.peak = Math.max(level, (s.peak ?? 0) - ctx.dt * 0.6);
+    for (const f of ctx.strips) {
+      const d = Math.abs(f.u - 0.5) * 2;                       // 0 at the center, 1 at the ends
+      const lit = d < level ? 1 : d < s.peak && d > s.peak - 0.08 ? 0.8 : 0;
+      const col = paletteAt(p.palette, t + d * 0.3);
+      ctx.set(f, mix(col, [1, 1, 1], d < bass * 0.5 ? 0.4 : 0), { dim: p.floor * 0.5 + (1 - p.floor * 0.5) * lit });
+    }
     for (const f of ctx.fixtures) {
+      if (f.u !== undefined) continue;
       if (f.kind === "spot") {
         const v = p.spotsFollow === "onsets" ? s.flash : p.spotsFollow === "highs" ? high : s.levelSmooth;
         ctx.set(f, [1, 1, 1], { dim: v });

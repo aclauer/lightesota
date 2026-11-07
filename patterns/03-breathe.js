@@ -13,7 +13,8 @@ export default {
   render(ctx) {
     const p = ctx.params;
     for (const f of ctx.fixtures) {
-      const ph = ctx.bar / p.bars + f.nx * p.stagger;
+      // Strips: the breath travels along the stretch instead of staggering by room position.
+      const ph = ctx.bar / p.bars + (f.u !== undefined ? f.u : f.nx) * p.stagger;
       const v = 0.5 - 0.5 * Math.cos(ph * Math.PI * 2);
       const level = p.floor + (1 - p.floor) * ease.inOutQuad(v);
       if (f.kind === "spot") ctx.set(f, [1, 1, 1], { dim: level * p.spots });

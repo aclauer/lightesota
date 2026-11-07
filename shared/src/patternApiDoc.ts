@@ -61,6 +61,10 @@ ctx fields, read-only unless noted:
   ctx.byTag(tag)            fixtures with a tag, e.g. ctx.byTag("wash").
   ctx.washes / ctx.spots / ctx.hue   shortcuts for kind === "wash" / "spot" / "hue".
   ctx.lasers     number of enabled lasers in the rig (they are NOT in ctx.fixtures; see "Lasers" below).
+  ctx.strips     the balcony lightstrips as a list of color points in order along the whole stretch (three
+                 gradient strips end to end = 15 points). Each has f.u = 0..1 position along the stretch, and is
+                 also in ctx.fixtures (kind "hue", tags "strip"/"segment"). Paint them by f.u for ramps, wipes,
+                 chases and meters that run across the entire stretch; patterns that only use f.nx still work.
 
 Helpers available as globals:
   hsv(h, s, v), hsl(h, s, l), hex("#ff0000"), mix(a, b, t), scale(c, k), paletteAt(colorsArray, t),

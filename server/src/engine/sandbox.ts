@@ -14,6 +14,8 @@ export interface SandboxFixture {
   kind: "wash" | "spot" | "hue" | "other";
   tags: string[];
   isColor: boolean;
+  /** Strip points only: 0..1 position along the whole balcony stretch (all strips end to end, left to right). */
+  u?: number;
 }
 
 /** Per-fixture output: r g b w a uv dim strobe */
@@ -47,6 +49,8 @@ export interface RenderCtx {
   params: ParamValues; state: Record<string, unknown>;
   n: number; fixtures: SandboxFixture[];
   washes: SandboxFixture[]; spots: SandboxFixture[]; hue: SandboxFixture[];
+  /** Strip points in order along the stretch; each has f.u (0 at one end, 1 at the other). */
+  strips: SandboxFixture[];
   /** Number of enabled lasers (not in fixtures). */
   lasers: number;
   random: () => number;
@@ -172,6 +176,18 @@ export function compilePattern(source: string, opts: CompileOptions = {}): Compi
   };
 }
 
+/** Strip points (tag "strip") sorted along their line; u is assigned by rank so it survives any placement. */
+function stripsOf(fixtures: SandboxFixture[]): SandboxFixture[] {
+  const s = fixtures.filter((f) => f.tags.includes("strip") || f.tags.includes("segment"));
+  if (s.length === 0) return s;
+  // Sort along the dominant axis of the stretch.
+  const xs = s.map((f) => f.x), ys = s.map((f) => f.y);
+  const horizontal = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
+  s.sort((a, b) => (horizontal ? a.x - b.x : a.y - b.y));
+  s.forEach((f, i) => { f.u = s.length === 1 ? 0.5 : i / (s.length - 1); });
+  return s;
+}
+
 function mulberry32(seed: number) {
   let a = seed >>> 0;
   return () => {
@@ -216,6 +232,7 @@ export class PatternInstance {
       washes: fixtures.filter((f) => f.kind === "wash"),
       spots: fixtures.filter((f) => f.kind === "spot"),
       hue: fixtures.filter((f) => f.kind === "hue"),
+      strips: stripsOf(fixtures),
       random: mulberry32(seed),
       set(f, color, extras) {
         const i = idx(f);
@@ -270,6 +287,7 @@ export class PatternInstance {
     this.ctx.washes = fixtures.filter((f) => f.kind === "wash");
     this.ctx.spots = fixtures.filter((f) => f.kind === "spot");
     this.ctx.hue = fixtures.filter((f) => f.kind === "hue");
+    this.ctx.strips = stripsOf(fixtures);
     (this as { out: Float32Array }).out = new Float32Array(Math.max(1, fixtures.length) * OUT_STRIDE);
   }
 
