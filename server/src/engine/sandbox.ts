@@ -88,6 +88,7 @@ const pulse = (p: number, width = 0.1) => { p = fract(p); return p < width ? 1 -
 function makeGlobals(log: (...a: unknown[]) => void) {
   return {
     hsv, hsl, hex, mix, scale, paletteAt, PALETTES: Object.freeze({ ...PALETTES }), laserColor: nearestLaserColor,
+    stripDot, stripWipe, stripFill,
     lerp, clamp, clamp01, smoothstep, fract, wrap, luminance,
     noise, noise2, noise3, tri, saw, square, pulse, ease: Object.freeze({ ...ease }),
     Math, Array, Object, JSON, Number, String, Boolean, Map, Set, isFinite, isNaN, parseInt, parseFloat,
@@ -174,6 +175,40 @@ export function compilePattern(source: string, opts: CompileOptions = {}): Compi
     init: typeof def.init === "function" ? (def.init as (ctx: RenderCtx) => void) : undefined,
     render: def.render as (ctx: RenderCtx) => void,
   };
+}
+
+// ---- Strip ring primitives (exposed to patterns as globals) ----
+// The strips form a ring of pixels around the room (ctx.strips, each with f.u 0..1). Positions here
+// are in pixels along that ring; the ring wraps, so a dot running off the end comes back at the start.
+
+type AnyColor = RGB | string | number[];
+/** Paint every strip pixel one color. */
+function stripFill(ctx: RenderCtx, color: AnyColor, dim = 1) {
+  for (const f of ctx.strips) ctx.set(f, color, { dim });
+}
+/**
+ * A soft-edged band `width` pixels long centered at pixel `pos` (wraps around the ring), over `bg`.
+ * Pixels outside the band get `bg`; pass null to leave them as they are.
+ */
+function stripDot(ctx: RenderCtx, pos: number, width: number, color: AnyColor, bg: AnyColor | null = [0, 0, 0], edge = 1) {
+  const n = ctx.strips.length; if (n === 0) return;
+  const c = toRGB(color), b = bg === null ? null : toRGB(bg);
+  for (const f of ctx.strips) {
+    const i = (f.u ?? 0) * (n - 1);
+    let d = Math.abs(i - pos) % n; d = Math.min(d, n - d);
+    const k = clamp01((width / 2 + edge / 2 - d) / edge);
+    if (k <= 0) { if (b) ctx.set(f, b); continue; }
+    ctx.set(f, b ? mix(b, c, k) : scale(c, k));
+  }
+}
+/** Pixels behind `front` (in pixels along the ring) show `to`, pixels ahead show `from`, blended over `edge` pixels. */
+function stripWipe(ctx: RenderCtx, front: number, edge: number, from: AnyColor, to: AnyColor) {
+  const n = ctx.strips.length; if (n === 0) return;
+  const a = toRGB(from), b = toRGB(to);
+  for (const f of ctx.strips) {
+    const i = (f.u ?? 0) * (n - 1);
+    ctx.set(f, mix(a, b, clamp01((front - i) / Math.max(0.01, edge))));
+  }
 }
 
 /**
