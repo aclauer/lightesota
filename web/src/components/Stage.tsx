@@ -158,11 +158,13 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
           const luma = frameLuma(c);
           if (luma <= 0.01) continue;
           const p = findProfile(f.profileId, rig.customProfiles);
-          const r = ((p?.size ?? 0.3) / 2) * s.scale;
-          const glow = r * (3 + luma * 4);
+          // Strip points glow softly and locally; a 1.3 m bar is not a 1.3 m wash.
+          const seg = !!f.segments;
+          const r = seg ? (((p?.size ?? 1) * 2.2) / (f.segments ?? 1) / 2) * s.scale : ((p?.size ?? 0.3) / 2) * s.scale;
+          const glow = seg ? r * (1.6 + luma * 1.2) : r * (3 + luma * 4);
           const g = ctx.createRadialGradient(X(f.x), Y(f.y), r * 0.5, X(f.x), Y(f.y), glow);
           const col = frameToCss(c);
-          g.addColorStop(0, col.replace("rgb", "rgba").replace(")", `, ${0.55 * luma})`));
+          g.addColorStop(0, col.replace("rgb", "rgba").replace(")", `, ${(seg ? 0.22 : 0.55) * luma})`));
           g.addColorStop(1, col.replace("rgb", "rgba").replace(")", ", 0)"));
           ctx.fillStyle = g;
           ctx.fillRect(X(f.x) - glow, Y(f.y) - glow, glow * 2, glow * 2);

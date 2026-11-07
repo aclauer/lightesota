@@ -192,7 +192,23 @@ input[type=range]:disabled { opacity: 0.4; }
 .seg button.active { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(0,0,0,0.25); }
 
 /* Layouts */
-.live { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; height: 100%; min-height: 0; }
+.live { display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-areas: "stage side"; gap: 16px; height: 100%; min-height: 0; }
+.live.with-agent { grid-template-columns: 330px minmax(0, 1fr) 360px; grid-template-areas: "agent stage side"; }
+.live .stage-wrap { grid-area: stage; }
+.live .side { grid-area: side; }
+.agent-panel { grid-area: agent; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; min-height: 0; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.agent-head { display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--line); }
+.agent-head > svg { width: 18px; height: 18px; flex: none; color: var(--accent); }
+.agent-head .select { flex: 1; min-width: 0; padding: 6px 28px 6px 8px; font-size: 12.5px; }
+.agent-head .btn.active { color: var(--accent); }
+.agent-panel .msgs { overflow: auto; padding: 12px; display: grid; gap: 10px; align-content: start; }
+.agent-panel .msg { max-width: 100%; }
+.agent-panel .msg .bubble { font-size: 13px; padding: 8px 11px; }
+.agent-panel .suggestions { padding: 0 12px 10px; }
+.agent-panel .composer { padding: 8px; }
+@media (max-width: 1279px) {
+  .live.with-agent { grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: minmax(0, 1fr) 300px; grid-template-areas: "stage side" "agent side"; }
+}
 .live .stage-wrap { display: grid; grid-template-rows: auto 1fr auto; gap: 10px; min-height: 320px; }
 .recent { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .recent-label { font-size: 11px; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; flex: none; }
@@ -205,7 +221,7 @@ input[type=range]:disabled { opacity: 0.4; }
 .recent-tile.is-live .ago { color: var(--accent); }
 .recent-tile:disabled { cursor: default; }
 .live .side { display: grid; gap: 12px; align-content: start; overflow: auto; min-height: 0; }
-@media (max-width: 1000px) { .live { grid-template-columns: minmax(0, 1fr); height: auto; } .live .stage-wrap { min-height: 260px; } .live .stage-card { min-height: 300px; } }
+@media (max-width: 1000px) { .live, .live.with-agent { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "stage" "agent" "side"; height: auto; } .live .stage-wrap { min-height: 260px; } .live .stage-card { min-height: 300px; } .agent-panel { height: 60vh; } }
 .stage-card { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; min-height: 240px; }
 .stage-card canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .stage-toolbar { position: absolute; top: 8px; left: 8px; right: 8px; display: flex; gap: 6px; align-items: center; pointer-events: none; }
@@ -251,11 +267,6 @@ input[type=range]:disabled { opacity: 0.4; }
 .plist button .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 
 /* Agent */
-.agent { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 12px; height: 100%; min-height: 0; }
-.agent .convs { overflow: auto; min-height: 0; display: grid; gap: 6px; align-content: start; }
-.agent .chat { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.agent .chat h2 { text-wrap: balance; }
-.agent .msgs { overflow: auto; padding: 14px; display: grid; gap: 12px; align-content: start; }
 .msg { display: grid; gap: 6px; max-width: 760px; }
 .msg.user { justify-self: end; }
 .msg .bubble { padding: 10px 13px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
@@ -270,7 +281,6 @@ input[type=range]:disabled { opacity: 0.4; }
 .composer textarea { flex: 1; min-width: 0; resize: none; max-height: 140px; min-height: 40px; }
 .suggestions { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 14px 12px; min-width: 0; }
 .suggestions button { font-size: 12.5px; white-space: normal; text-align: left; max-width: 100%; }
-@media (max-width: 900px) { .agent { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .agent .convs { display: flex; overflow-x: auto; gap: 6px; } .agent .convs .plist { display: flex; gap: 6px; } .agent .convs .plist button { width: auto; white-space: nowrap; } }
 
 /* Toasts */
 .toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--tabbar-h) + var(--sab) + 12px); display: grid; gap: 6px; z-index: 50; width: min(92vw, 420px); pointer-events: none; }
@@ -331,20 +341,14 @@ table.tbl th { font-size: 11px; color: var(--fg-3); text-transform: uppercase; l
 .pip.collapsed { width: 220px; }
 @media (max-width: 820px) { .pip { display: none; } }
 /* Floating agent prompt, bottom left */
-.agent-tile { position: fixed; left: calc(var(--nav-w) + max(16px, var(--sal))); bottom: max(16px, var(--sab)); width: 360px; display: flex; gap: 6px; align-items: center; padding: 6px; background: var(--bg-elev); border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: var(--shadow); z-index: 30; }
-.agent-tile .input { min-height: 34px; }
-@media (max-width: 820px) { .agent-tile { display: none; } }
 @media (min-width: 821px) {
   /* Leave room under the content for the floating tile on every tab but Agent. */
-  .app:not(.view-agent) > main { padding-bottom: 72px; }
   .app.pip-visible:is(.view-patterns, .view-settings) > main:not(:has(.editor)) { padding-bottom: 300px; }
   .app.pip-visible .live .side, .app.pip-visible .editor .side { padding-bottom: 300px; }
 }
 /* Keep the chat clear of the picture-in-picture box. */
 @media (min-width: 1100px) {
-  .pip-visible .agent .msgs, .pip-visible .agent .composer, .pip-visible .agent .suggestions { padding-right: 330px; }
 }
-@media (max-width: 1099px) { .view-agent .pip { display: none; } }
 
 /* Lasers */
 .pill.danger svg, .lasers .pill svg { width: 12px; height: 12px; vertical-align: -2px; }

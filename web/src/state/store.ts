@@ -165,7 +165,7 @@ export const useStore = create<AppState>((set, get) => {
     ws, connected: false, role: "viewer", clientId: null, deviceId: null, myName: "", devices: [],
     rig: null, show: null, patterns: [], scenes: [], playlists: [], settings: null, status: null, presence: [],
     frame: [], frameT: 0, dmx: null, patternCache: {}, hueLights: [], toasts: [],
-    view: views.includes(hashView) ? hashView : "live",
+    view: views.includes(hashView) && hashView !== "agent" ? hashView : "live",
     theme: initialTheme,
     selectedFixtureId: null, editorPatternId: null,
     agent: { conversations: [], current: null, busy: {}, all: false },

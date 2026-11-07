@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bot, Check, Loader2, Plus, Send, Square, Trash2, Wrench, X } from "lucide-react";
+import { Bot, Check, Loader2, Plus, Send, Square, Trash2, Users, Wrench, X } from "lucide-react";
 import type { AgentChatMessage, AgentToolCall } from "@lightesota/shared";
 import { useStore } from "../state/store";
 
@@ -10,7 +10,11 @@ const SUGGESTIONS = [
   "Modify the current pattern so the colors can be changed and the speed follows the BPM",
 ];
 
-export function AgentView() {
+/**
+ * The agent as a column on the Live view: pick or start a conversation at the top, the transcript
+ * runs top to bottom, the composer sits at the bottom. Replaces the old Agent tab and tile.
+ */
+export function AgentPanel() {
   const agent = useStore((s) => s.agent);
   const send = useStore((s) => s.send);
   const status = useStore((s) => s.status);
@@ -31,52 +35,42 @@ export function AgentView() {
     send({ type: "agent", command: { type: "send", conversationId: conv?.id ?? null, text: msg, context: { patternId: editorPatternId || show?.patternId || null } } });
     setText("");
   };
+  const empty = !conv || conv.messages.length === 0;
 
   return (
-    <div className="agent">
-      <div className="convs">
-        <button className="btn" onClick={() => send({ type: "agent", command: { type: "new" } })}><Plus /> New chat</button>
-        {can("admin") && (
-          <div className="seg" style={{ alignSelf: "start" }}>
-            <button className={!agent.all ? "active" : ""} onClick={() => send({ type: "agent", command: { type: "list", all: false } })}>Mine</button>
-            <button className={agent.all ? "active" : ""} onClick={() => send({ type: "agent", command: { type: "list", all: true } })}>Everyone's</button>
+    <aside className="agent-panel" aria-label="Agent">
+      <div className="agent-head">
+        <Bot />
+        <select className="select" value={conv?.id ?? ""} onChange={(e) => e.target.value ? send({ type: "agent", command: { type: "open", conversationId: e.target.value } }) : send({ type: "agent", command: { type: "new" } })} aria-label="Conversation">
+          <option value="">New chat…</option>
+          {agent.conversations.map((c) => <option key={c.id} value={c.id}>{agent.all && !c.mine && c.ownerName ? `${c.ownerName}: ` : ""}{c.title}</option>)}
+        </select>
+        <button className="btn ghost icon sm" title="New chat" aria-label="New chat" onClick={() => send({ type: "agent", command: { type: "new" } })}><Plus /></button>
+        {can("admin") && <button className={`btn ghost icon sm ${agent.all ? "active" : ""}`} title={agent.all ? "Showing everyone's chats" : "Show everyone's chats"} aria-label="Everyone's chats" onClick={() => send({ type: "agent", command: { type: "list", all: !agent.all } })}><Users /></button>}
+        {conv && <button className="btn ghost icon sm" title="Delete this chat" aria-label="Delete chat" onClick={() => send({ type: "agent", command: { type: "delete", conversationId: conv.id } })}><Trash2 /></button>}
+      </div>
+      <div className="msgs" ref={msgsRef}>
+        {status && !status.hasApiKey && (
+          <div className="card" style={{ borderColor: "var(--warn)" }}>
+            <b>Agent needs an API key</b>
+            <p className="muted">Set <code>ANTHROPIC_API_KEY</code> in the server's environment and restart.</p>
           </div>
         )}
-        <div className="plist">
-          {agent.conversations.map((c) => (
-            <button key={c.id} className={conv?.id === c.id ? "active" : ""} onClick={() => send({ type: "agent", command: { type: "open", conversationId: c.id } })} title={c.ownerName ? `Started by ${c.ownerName}` : ""}>
-              <span className="t">{agent.all && !c.mine && c.ownerName ? <span className="faint">{c.ownerName}: </span> : null}{c.title}</span>
-              <span className="btn ghost icon sm" role="button" aria-label="Delete" onClick={(e) => { e.stopPropagation(); send({ type: "agent", command: { type: "delete", conversationId: c.id } }); }}><Trash2 style={{ width: 13, height: 13 }} /></span>
-            </button>
-          ))}
-        </div>
+        {empty ? (
+          <div className="stack">
+            <p className="muted">Describe a look and the agent writes a pattern, test-renders it and applies it. Tunable parts become sliders on the right. Each request takes 10 to 30 seconds.</p>
+          </div>
+        ) : conv!.messages.map((m) => <Message key={m.id} m={m} />)}
       </div>
-      <div className="chat">
-        <div className="msgs" ref={msgsRef}>
-          {status && !status.hasApiKey && (
-            <div className="card" style={{ borderColor: "var(--warn)" }}>
-              <h2>Agent needs an API key</h2>
-              <p className="muted">Set <code>ANTHROPIC_API_KEY</code> in the server's environment (for example in a <code>.env</code> file next to the repo, see the README) and restart the server. Everything else works without it.</p>
-            </div>
-          )}
-          {!conv || conv.messages.length === 0 ? (
-            <div className="stack" style={{ maxWidth: 640 }}>
-              <div className="row"><Bot /> <h2 style={{ fontSize: 16 }}>Describe a look and the agent will write and apply it</h2></div>
-              <p className="muted">It knows the rig (the enabled fixtures on the Stage tab). It writes a pattern, test-renders it, applies it, and exposes the tunable parts as sliders on the Live tab. Ask for changes in plain language.</p>
-              <p className="hint">Each request takes about 10 to 30 seconds.</p>
-            </div>
-          ) : conv.messages.map((m) => <Message key={m.id} m={m} />)}
-        </div>
-        {(!conv || conv.messages.length === 0) && (
-          <div className="suggestions">{SUGGESTIONS.map((s) => <button key={s} className="btn sm" onClick={() => submit(s)}>{s}</button>)}</div>
-        )}
-        <div className="composer">
-          <textarea className="input" rows={1} placeholder={busy ? "Working…" : window.innerWidth < 600 ? "Describe a look…" : "e.g. “Make the spots strobe on the off-beat and tint the washes teal”"} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }} aria-label="Message" />
-          {busy ? <button className="btn danger icon" onClick={() => conv && send({ type: "agent", command: { type: "cancel", conversationId: conv.id } })} aria-label="Stop"><Square /></button>
-            : <button className="btn primary icon" onClick={() => submit()} disabled={!text.trim()} aria-label="Send"><Send /></button>}
-        </div>
+      {empty && (
+        <div className="suggestions">{SUGGESTIONS.slice(0, 3).map((s) => <button key={s} className="btn sm" onClick={() => submit(s)}>{s}</button>)}</div>
+      )}
+      <div className="composer">
+        <textarea className="input" rows={1} placeholder={busy ? "Working…" : "Ask for a look…"} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }} aria-label="Message" />
+        {busy ? <button className="btn danger icon" onClick={() => conv && send({ type: "agent", command: { type: "cancel", conversationId: conv.id } })} aria-label="Stop"><Square /></button>
+          : <button className="btn primary icon" onClick={() => submit()} disabled={!text.trim()} aria-label="Send"><Send /></button>}
       </div>
-    </div>
+    </aside>
   );
 }
 

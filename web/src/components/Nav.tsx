@@ -1,9 +1,8 @@
-import { Bot, LayoutGrid, Map, Play, Settings } from "lucide-react";
+import { LayoutGrid, Map, Play, Settings } from "lucide-react";
 import { useStore, type View } from "../state/store";
 
 const items: { id: View; label: string; icon: typeof Play; min?: "admin" | "editor" }[] = [
   { id: "live", label: "Live", icon: Play },
-  { id: "agent", label: "Agent", icon: Bot, min: "editor" },
   { id: "patterns", label: "Patterns", icon: LayoutGrid },
   { id: "stage", label: "Stage", icon: Map, min: "admin" },
   { id: "settings", label: "Settings", icon: Settings },
@@ -14,8 +13,7 @@ export function Nav() {
   const setView = useStore((s) => s.setView);
   const can = useStore((s) => s.can);
   const role = useStore((s) => s.role);
-  const guestAgent = useStore((s) => s.settings?.agent.guestAccess ?? false);
-  const visible = (i: typeof items[number]) => !i.min || can(i.min) || (i.id === "agent" && guestAgent && can("guest"));
+  const visible = (i: typeof items[number]) => !i.min || can(i.min);
   return (
     <nav className="nav" aria-label="Sections">
       {items.filter(visible).map((i) => (
