@@ -67,8 +67,8 @@ ctx fields, read-only unless noted:
                  chases and meters that run across the entire stretch; patterns that only use f.nx still work.
                  The order is a ring around the room (balcony left to right, then the far wall right to left).
   Strip ring helpers (positions are in pixels along the ring; ctx.strips.length pixels, 5 per strip, wraps):
-    stripDot(ctx, pos, width, color, bg = black, edge = 1)   a soft band `width` pixels long centered at pos
-    stripWipe(ctx, front, edge, from, to)                   pixels behind front show `to`, ahead show `from`
+    stripDot(ctx, pos, width, color, bg = black, edge = 1)   a soft band "width" pixels long centered at pos
+    stripWipe(ctx, front, edge, from, to)                   pixels behind front show "to", ahead show "from"
     stripFill(ctx, color, dim = 1)                          every strip pixel one color
   Example, a dot one strip long lapping the room every 8 beats:
     const n = ctx.strips.length; stripDot(ctx, fract(ctx.beat / 8) * n, 5, "#00e5ff", "#000820");
