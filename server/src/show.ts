@@ -13,7 +13,7 @@ import { requireHazeOutput } from "./output/policy.js";
 import { planUniverse } from "./output/dmx.js";
 import { JsonFile } from "./store.js";
 
-interface ShowEvents { show: [ShowState]; toast: [{ level: "info" | "success" | "warning" | "error"; text: string }]; }
+interface ShowEvents { show: [ShowState]; lightingStopped: []; toast: [{ level: "info" | "success" | "warning" | "error"; text: string }]; }
 
 /** Owns the ShowState, applies commands to the engine, runs playlists, persists the last show. */
 export class ShowController extends EventEmitter<ShowEvents> {
@@ -159,7 +159,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
     this.state.released = false; this.state.activeSceneId = null; this.state.stopped = true;
     this.engine.washes = this.state.washes;
     // State/callbacks are already dark even if an output subscriber throws while publishing.
-    try { this.engine.halt(); } finally { this.changed(); }
+    try { this.engine.halt(); } finally { this.changed(); this.emit("lightingStopped"); }
   }
 
   private selectedWashes(ids: string[]) {

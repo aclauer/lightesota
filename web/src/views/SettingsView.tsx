@@ -5,6 +5,8 @@ import { useStore } from "../state/store";
 import { ShareModal } from "../components/ShareModal";
 import { effectiveTheme } from "../lib/theme";
 import { timeAgo } from "../lib/format";
+import { AgentProviderSummary } from "../components/AgentProviderSummary";
+import { selectAgentProvider } from "../lib/agent";
 
 export function SettingsView() {
   const settings = useStore((s) => s.settings)!;
@@ -115,15 +117,28 @@ export function SettingsView() {
           <div className="card">
             <h3>Agent</h3>
             <div className="stack">
-              <div className="row"><span className={`pill ${status?.hasApiKey ? "ok" : "warn"}`}>{status?.hasApiKey ? "API key found" : "no API key"}</span><span className="hint">Set ANTHROPIC_API_KEY in the server environment.</span></div>
-              <label className="field"><span>Model</span>
-                <select className="select" value={local.agent.model} onChange={(e) => save({ agent: { ...local.agent, model: e.target.value } })}>
-                  {["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"].map((m) => <option key={m} value={m}>{m}</option>)}
+              <label className="field"><span>Inference provider</span>
+                <select className="select" value={local.agent.provider} onChange={(e) => save({ agent: selectAgentProvider(local.agent, e.target.value === "anthropic" ? "anthropic" : "hermes") })}>
+                  <option value="hermes">Hermes / Nous Portal</option>
+                  <option value="anthropic">Anthropic (manual rollback)</option>
                 </select>
               </label>
-              <label className="field"><span>Effort</span>
-                <div className="seg">{(["low", "medium", "high", "xhigh"] as const).map((e) => <button key={e} className={local.agent.effort === e ? "active" : ""} onClick={() => save({ agent: { ...local.agent, effort: e } })}>{e}</button>)}</div>
-              </label>
+              <AgentProviderSummary settings={local.agent} status={status?.agent} preview={status?.control?.preview} />
+              {local.agent.provider === "hermes" ? (
+                <p className="hint" style={{ color: "var(--fg-2)" }}>DeepSeek uses max reasoning with thinking enabled. An operator configures the Hermes subscription proxy and company authorization on the server; proxy credentials stay out of shared settings.</p>
+              ) : (
+                <>
+                  <label className="field"><span>Anthropic model</span>
+                    <select className="select" value={local.agent.model} onChange={(e) => save({ agent: { ...local.agent, model: e.target.value } })}>
+                      {[...new Set([local.agent.model, "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"])].map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </label>
+                  <label className="field"><span>Anthropic effort</span>
+                    <div className="seg">{(["low", "medium", "high", "xhigh", "max"] as const).map((e) => <button key={e} className={local.agent.effort === e ? "active" : ""} onClick={() => save({ agent: { ...local.agent, effort: e } })}>{e}</button>)}</div>
+                  </label>
+                  <p className="hint" style={{ color: "var(--fg-2)" }}>Manual rollback requires ANTHROPIC_API_KEY in the server environment. Provider failures never switch providers automatically.</p>
+                </>
+              )}
               <label className="row"><button className={`switch ${local.agent.allowApply ? "on" : ""}`} role="switch" aria-checked={local.agent.allowApply} onClick={() => save({ agent: { ...local.agent, allowApply: !local.agent.allowApply } })} /> Agent may apply patterns and change the live show</label>
               <div className="divider" />
               <label className="row"><button className={`switch ${local.agent.guestAccess ? "on" : ""}`} role="switch" aria-checked={local.agent.guestAccess} onClick={() => save({ agent: { ...local.agent, guestAccess: !local.agent.guestAccess } })} /> Guests may use the agent (rate limited)</label>
@@ -133,7 +148,7 @@ export function SettingsView() {
                   <label className="field" style={{ flex: 1 }}><span>All guests together / hour</span><input className="input tabular" type="number" min={1} max={1000} value={local.agent.guestTotalPerHour} onChange={(e) => setLocal({ ...local, agent: { ...local.agent, guestTotalPerHour: Number(e.target.value) } })} onBlur={() => save({ agent: local.agent })} /></label>
                 </div>
               )}
-              <p className="hint">Each prompt costs a few cents on {local.agent.model.includes("opus") ? "Opus" : local.agent.model.includes("haiku") ? "Haiku" : "Sonnet"}. Editors and admins are not limited.</p>
+              <p className="hint">Editors and admins are not subject to guest prompt limits.</p>
             </div>
           </div>
         )}

@@ -299,9 +299,16 @@ export interface HueSettings {
   rateHz: number;
 }
 
+export type AgentProvider = "hermes" | "anthropic";
+export type AgentEffort = "low" | "medium" | "high" | "xhigh" | "max";
+export const HERMES_MODEL = "deepseek/deepseek-v4.1-flash-1017";
+
 export interface AgentSettings {
+  provider: AgentProvider;
   model: string;
-  effort: "low" | "medium" | "high" | "xhigh" | "max";
+  effort: AgentEffort;
+  /** Retained when selecting Hermes so an explicit rollback restores the previous choice. */
+  anthropic?: { model: string; effort: AgentEffort };
   /** When false the agent may not auto-apply patterns. */
   allowApply: boolean;
   /** Guests (control level) may send prompts, subject to the limits below. */
@@ -328,12 +335,24 @@ export interface Settings {
   previewFps: number;
 }
 
+/** Inference observations, not an assertion that environment configuration works. */
+export interface AgentProviderStatus {
+  provider: AgentProvider;
+  model: string;
+  reasoning: string;
+  state: "preview" | "missing" | "configured" | "reachable" | "usable" | "error";
+  /** Sanitized operator guidance; never include credentials, headers or upstream response bodies. */
+  message: string;
+}
+
 export interface OutputStatus {
   control?: { preview: boolean; commissioned: boolean; hazeCommissioned: boolean; hazeDisabledReason: string | null; physicalState: "unverified"; authority: "lightesota" };
   artnet: { sending: boolean; fps: number; lastSentAt: number; frames: number; error?: string };
   upstream: { listening: boolean; lastFrameAt: number; from: string; frames: number };
   hue: { connected: boolean; lights: number; lastError?: string };
   engine: { fps: number; patternError?: string; restarts: number };
+  agent?: AgentProviderStatus;
+  /** Legacy compatibility only. Provider connectivity is reported by agent.state. */
   hasApiKey: boolean;
 }
 

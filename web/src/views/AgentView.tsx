@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, Check, Loader2, Plus, Send, Square, Trash2, Wrench, X } from "lucide-react";
 import type { AgentChatMessage, AgentToolCall } from "@lightesota/shared";
 import { useStore } from "../state/store";
+import { AgentProviderSummary } from "../components/AgentProviderSummary";
+import { agentPresentation } from "../lib/agent";
 
 const SUGGESTIONS = [
   "Make a slow, warm sunset fade that moves from the front of the room to the back",
@@ -14,6 +16,7 @@ export function AgentView() {
   const agent = useStore((s) => s.agent);
   const send = useStore((s) => s.send);
   const status = useStore((s) => s.status);
+  const settings = useStore((s) => s.settings);
   const can = useStore((s) => s.can);
   const editorPatternId = useStore((s) => s.editorPatternId);
   const show = useStore((s) => s.show);
@@ -21,13 +24,14 @@ export function AgentView() {
   const msgsRef = useRef<HTMLDivElement>(null);
   const conv = agent.current;
   const busy = conv ? !!agent.busy[conv.id] : false;
+  const provider = agentPresentation(settings?.agent, status?.agent, status?.control?.preview);
 
   useEffect(() => { send({ type: "agent", command: { type: "list" } }); }, [send]);
-  useEffect(() => { const el = msgsRef.current; if (el) el.scrollTop = el.scrollHeight; }, [conv?.messages, conv?.messages.at(-1)?.text, conv?.messages.at(-1)?.toolCalls.length]);
+  useEffect(() => { const el = msgsRef.current; if (el) el.scrollTop = conv?.messages.length ? el.scrollHeight : 0; }, [conv?.messages, conv?.messages.at(-1)?.text, conv?.messages.at(-1)?.toolCalls.length]);
 
   const submit = (t?: string) => {
     const msg = (t ?? text).trim();
-    if (!msg || busy) return;
+    if (!msg || busy || !provider.canSend) return;
     send({ type: "agent", command: { type: "send", conversationId: conv?.id ?? null, text: msg, context: { patternId: editorPatternId || show?.patternId || null } } });
     setText("");
   };
@@ -53,27 +57,22 @@ export function AgentView() {
       </div>
       <div className="chat">
         <div className="msgs" ref={msgsRef}>
-          {status && !status.hasApiKey && (
-            <div className="card" style={{ borderColor: "var(--warn)" }}>
-              <h2>Agent needs an API key</h2>
-              <p className="muted">Set <code>ANTHROPIC_API_KEY</code> in the server's environment (for example in a <code>.env</code> file next to the repo, see the README) and restart the server. Everything else works without it.</p>
-            </div>
-          )}
+          <AgentProviderSummary settings={settings?.agent} status={status?.agent} preview={status?.control?.preview} />
           {!conv || conv.messages.length === 0 ? (
             <div className="stack" style={{ maxWidth: 640 }}>
               <div className="row"><Bot /> <h2 style={{ fontSize: 16 }}>Describe a look and the agent will write and apply it</h2></div>
               <p className="muted">It knows the rig (the enabled fixtures on the Stage tab). It writes a pattern, test-renders it, applies it, and exposes the tunable parts as sliders on the Live tab. Ask for changes in plain language.</p>
-              <p className="hint">Each request takes about 10 to 30 seconds.</p>
+              <p className="hint" style={{ color: "var(--fg-2)" }}>Thinking is not shown in chat. Responses may take time; Stop cancels the current request. Existing show permissions still apply.</p>
             </div>
           ) : conv.messages.map((m) => <Message key={m.id} m={m} />)}
         </div>
         {(!conv || conv.messages.length === 0) && (
-          <div className="suggestions">{SUGGESTIONS.map((s) => <button key={s} className="btn sm" onClick={() => submit(s)}>{s}</button>)}</div>
+          <div className="suggestions">{SUGGESTIONS.map((s) => <button key={s} className="btn sm" disabled={!provider.canSend} onClick={() => submit(s)}>{s}</button>)}</div>
         )}
         <div className="composer">
           <textarea className="input" rows={1} placeholder={busy ? "Working…" : window.innerWidth < 600 ? "Describe a look…" : "e.g. “Make the spots strobe on the off-beat and tint the washes teal”"} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }} aria-label="Message" />
           {busy ? <button className="btn danger icon" onClick={() => conv && send({ type: "agent", command: { type: "cancel", conversationId: conv.id } })} aria-label="Stop"><Square /></button>
-            : <button className="btn primary icon" onClick={() => submit()} disabled={!text.trim()} aria-label="Send"><Send /></button>}
+            : <button className="btn primary icon" onClick={() => submit()} disabled={!text.trim() || !provider.canSend} title={!provider.canSend ? provider.message : undefined} aria-label="Send"><Send /></button>}
         </div>
       </div>
     </div>

@@ -1,5 +1,59 @@
 # Lighting integration — 2026-11-06
 
+## 2026-11-07 — Hermes inference and bounded Giskard API (for Andrew)
+
+Added a small fetch/SSE adapter for the separate Hermes Nous subscription proxy.
+New configurations pin `deepseek/deepseek-v4.1-flash-1017`, max reasoning, thinking
+enabled and the existing 32,000-token budget; failures never select another model
+or provider. Existing Anthropic settings/history and explicit rollback remain.
+The existing private conversation UI, guest quotas, tool/compiler boundaries,
+twelve-round loop and original generation capture are preserved. Stop now also
+cancels pending inference from every existing control path. Provider status shows
+configuration separately from reachability and completed inference.
+
+Added four dedicated Giskard POST routes for sanitized state, a pre-inference
+120-second one-use lease, one validated ordinary-light batch, and durable Stop.
+They reuse `ShowController`, add no output sender, require a separate bearer plus
+exact Slack identity allowlists, and reject hazards, strobe/code/URL controls,
+stale/replayed actions and uncommissioned apply. The Giskard token cannot enter
+existing browser/HA authorization, including accidental token reuse. Blackout,
+release and zero master are reported honestly and never lifted by these commands.
+
+Andrew's latest work at `d0bcaa4f43b3595831cf7c26090522ec206d4384`, including
+verified Hue TLS and balcony patterns, remains unchanged and retains his
+attribution. Existing fixture IDs/layouts, wash modes, effects, show classes,
+laser/haze boundaries, patterns and physical-output policy remain in place.
+
+Configuration is environment-only for proxy URL/key and Giskard credentials.
+See [Hermes setup/rollback](hermes-inference.md), the exact
+[Giskard API/gateway contract](giskard-lighting.md), Compose passthrough and
+`.env.example`. **Giskard defaults disabled and must stay disabled until the
+single-sender cutover is verified.** Company Nous authorization is operator-owned;
+Ari's private subscription must not power the shared office app. Preview still
+permanently blocks all physical output and production provider requests.
+
+The [native Hermes plugin](../integrations/giskard/README.md) adds only state,
+one bounded ordinary-light apply and Stop. Identity comes from trusted Slack
+metadata, not model arguments. Stable event hashes, runtime-bound one-use leases
+and durable SQLite receipts prevent retries or gateway/backend restarts from
+re-authorizing an old Slack message. Storage failure blocks new apply authority;
+authenticated state/Stop remain available. Keep the receipt database on upgrades.
+
+Meaningful RED/GREEN covered the adapter, service, configuration, API and replay
+boundaries. All **123 server tests, 14 browser-helper tests and 13 plugin tests
+pass**, along with typecheck and production build. The plugin also passed the real
+Hermes loader/request/tool middleware in a throwaway profile and 14 checks against
+the real loopback preview HTTP server. Built Settings/Agent views were inspected
+at desktop/mobile widths in light/dark themes with no horizontal overflow or
+console errors; provider/status contrast and empty-chat mobile scrolling were fixed.
+Tests use fake provider transports, isolated storage and permanently blocked
+physical outputs. Live Nous inference, protected cloud networking, deployed plugin
+compatibility, Slack delivery and physical lights remain unverified. The HA add-on
+wrapper is separate from this repository's Compose file and still needs the new
+configuration; no live provider has been switched. Rollback is an explicit
+Anthropic selection; Giskard can independently be disabled by unsetting
+`LIGHTESOTA_GISKARD_ENABLED` and restarting through the operator's deployment controls.
+
 This records the scoped integration and correctness fixes for Andrew's review.
 The live deployment, HA configuration, ODE, devices, accounts and credentials have
 not been changed. Publication does not commission physical output.

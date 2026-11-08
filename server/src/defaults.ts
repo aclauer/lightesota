@@ -1,4 +1,5 @@
-import type { Rig, Settings } from "../../shared/src/index.js";
+import { HERMES_MODEL, type Rig, type Settings } from "../../shared/src/index.js";
+import { deepMerge } from "./store.js";
 
 /** The office rig as wired on 2026-11-05 (washes in 12CH at 101/113/125/137, lasers at 31/41). */
 export function defaultRig(): Rig {
@@ -93,8 +94,25 @@ export function defaultSettings(): Settings {
       upstream: { enabled: false, listenPort: 6454, allowFrom: "" },
     },
     hue: { enabled: false, bridgeIp: "10.10.0.103", username: "", rateHz: 8 },
-    agent: { model: "claude-sonnet-5-5", effort: "medium", allowApply: true, guestAccess: true, guestIntervalSec: 30, guestTotalPerHour: 60 },
+    agent: { provider: "hermes", model: HERMES_MODEL, effort: "max", allowApply: true, guestAccess: true, guestIntervalSec: 30, guestTotalPerHour: 60 },
     sharing: { guestPermission: "control", publicUrl: "", venueName: "Office" },
     previewFps: 20,
   };
+}
+
+/** Legacy files/exports used Anthropic. Keep their exact model and effort for manual rollback. */
+export function migrateSettings(raw: unknown, base: Settings = defaultSettings()): Settings {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Settings must be an object");
+  const settings = deepMerge(base, raw);
+  const agent = (raw as Record<string, unknown>).agent;
+  if (agent && typeof agent === "object" && !Array.isArray(agent)) {
+    const old = agent as Record<string, unknown>;
+    if (old.provider === undefined && (old.model !== undefined || old.effort !== undefined)) {
+      settings.agent.provider = "anthropic";
+      settings.agent.model = (old.model ?? "claude-sonnet-5-5") as string;
+      settings.agent.effort = (old.effort ?? "medium") as Settings["agent"]["effort"];
+      settings.agent.anthropic = { model: settings.agent.model, effort: settings.agent.effort };
+    }
+  }
+  return settings;
 }

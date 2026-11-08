@@ -1,0 +1,8 @@
+name: lightesota
+version: "1.0.0"
+description: "Bounded, authenticated office lighting controls for Giskard in Slack."
+author: "aa-monts"
+provides_tools:
+  - lighting_state
+  - lighting_apply
+  - lighting_stop

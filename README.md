@@ -2,12 +2,12 @@
 
 A web console for the office lights. One Node process drives the DMX rig over Art-Net,
 renders a live top-down preview, keeps scenes and playlists, serves a shareable control page for
-phones, and hosts a Claude agent that writes new lighting patterns on request.
+phones, and hosts a bounded lighting agent that writes new patterns on request.
 
 ```
 Browsers (laptop, iPhone, friends) ──WebSocket──▶ server ──Art-Net──▶ ENTTEC ODE ──DMX──▶ washes + pinspots
                                                     │  └─Hue REST──▶ Hue Bridge ──▶ strips
-                                                    └─ Claude API (agent writes patterns)
+                                                    └─ Hermes subscription proxy ── Nous Portal (DeepSeek)
 ```
 
 ## Run it
@@ -37,8 +37,10 @@ docker compose up -d --build
 ```
 
 Configuration is by environment variables, see [.env.example](.env.example). A `.env` file in the
-repo root is loaded automatically by `npm start` and `npm run dev` (it is git-ignored). The agent
-needs `ANTHROPIC_API_KEY` there; restart the server after adding it. Everything the app
+repo root is loaded automatically by `npm start` and `npm run dev` (it is git-ignored). New agent
+configurations use a separate Hermes subscription proxy with company Nous authorization;
+see the [inference setup and rollback runbook](docs/hermes-inference.md). Preview blocks provider
+requests as well as physical output. Everything the app
 stores (rig, scenes, playlists, your patterns, agent chats, share tokens) lives in `data/` as
 JSON and JavaScript files.
 
@@ -73,7 +75,9 @@ not observed light or proof of delivered darkness.
 - **Scenes**: saved looks (pattern + params + BPM + master + independent wash modes). Hotkeys 1–9, favorites.
 - **Playlists**: timed sequences of scenes in bars or seconds, loop/shuffle.
 - **Agent**: describe a look; the agent writes the pattern, test-renders it, applies it and exposes
-  the tunable parts as parameters. Needs `ANTHROPIC_API_KEY` on the server.
+  the tunable parts as parameters. Hermes uses `deepseek/deepseek-v4.1-flash-1017`, max reasoning
+  and thinking enabled. Existing Anthropic configurations are preserved until an administrator
+  explicitly switches provider. Settings and chat show the actual provider and connection status.
 - **Stage**: drag fixtures to where they hang, set addresses and tags, add Hue lights.
 - **Settings**: Art-Net target, output ownership, Hue pairing, share links with QR code, theme,
   export/import, DMX monitor.
@@ -202,3 +206,8 @@ patterns/ built-in patterns
 See the [HA adapter tests](integrations/home_assistant/README.md#offline-validation) for Python checks.
 
 Changes in this integration are recorded in the [2026-11-06 change log](docs/lighting-integration-changelog.md).
+
+The [Giskard API contract](docs/giskard-lighting.md) describes the separate, default-disabled
+Slack gateway integration; its [native Hermes plugin and installation guide](integrations/giskard/README.md)
+ship in this repository. It permits one ordinary-light command per trusted turn and a durable Stop; it cannot arm lasers/haze, run arbitrary code, or authenticate the browser/HA APIs. Keep
+`LIGHTESOTA_GISKARD_ENABLED=0` until the single-sender cutover is verified.

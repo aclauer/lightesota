@@ -8,11 +8,11 @@ import type { AppContext } from "./api/context.js";
 import { createApp } from "./api/http.js";
 import { WsHub } from "./api/ws.js";
 import { config, ensureDataDirs } from "./config.js";
-import { defaultRig, defaultSettings, migrateRig } from "./defaults.js";
+import { defaultRig, defaultSettings, migrateRig, migrateSettings } from "./defaults.js";
 import { Library } from "./library.js";
 import { OutputManager } from "./output/output.js";
 import { ShowController } from "./show.js";
-import { deepMerge, JsonFile } from "./store.js";
+import { JsonFile } from "./store.js";
 import { OUTPUT_VETO, PREVIEW } from "./output/policy.js";
 import { validateRig, validateSettings } from "./api/validate.js";
 
@@ -24,7 +24,7 @@ const rigFile = new JsonFile<Rig>("rig.json", defaultRig);
   if (m.changed) { rigFile.set(m.rig); console.log("[rig] historical fixture metadata migrated; outputs start stopped"); }
   validateRig(rigFile.get());
 }
-const settingsFile = new JsonFile<Settings>("settings.json", defaultSettings, (raw) => deepMerge(defaultSettings(), raw));
+const settingsFile = new JsonFile<Settings>("settings.json", defaultSettings, migrateSettings);
 validateSettings(settingsFile.get());
 const library = new Library();
 library.load();
@@ -67,7 +67,8 @@ server.listen(config.port, config.host, () => {
   }
   console.log(`  Physical outputs: ${OUTPUT_VETO ? (PREVIEW ? "PREVIEW: permanently vetoed" : "uncommissioned: vetoed") : "commissioned; commanded state is not physical feedback"}`);
   console.log("  Authentication required. Tokens and share links are never printed in logs.");
-  console.log(`  Agent credentials: ${agent.hasCredentials() ? "found" : "missing (set ANTHROPIC_API_KEY)"}`);
+  const agentStatus = agent.status();
+  console.log(`  Agent: ${agentStatus.provider} / ${agentStatus.model} / ${agentStatus.reasoning}: ${agentStatus.state}`);
   console.log(`  Data dir: ${config.dataDir}\n`);
 });
 

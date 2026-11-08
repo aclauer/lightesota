@@ -1,5 +1,6 @@
 import express from "express";
 import { machineState, machineCommand } from "./control.js";
+import { createGiskardRouter } from "./giskard.js";
 import { importData } from "./import.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -13,6 +14,7 @@ import { roleAllows } from "../../../shared/src/index.js";
 export function createApp(ctx: AppContext) {
   const app = express();
   app.disable("x-powered-by");
+  app.use("/api/integrations/giskard", createGiskardRouter(ctx));
   app.use(express.json({ limit: "5mb" }));
 
   // Every browser gets a stable device id cookie; it keys rate limits, names and attribution.
@@ -40,7 +42,7 @@ export function createApp(ctx: AppContext) {
   app.get("/api/control/state", (req, res) => { machineState(ctx, req, res); });
   app.post("/api/control/command", (req, res) => { machineCommand(ctx, req, res); });
 
-  app.get("/api/health", (_req, res) => res.json({ ok: true, status: ctx.output.status(ctx.agent.hasCredentials()) }));
+  app.get("/api/health", (_req, res) => res.json({ ok: true, status: {...ctx.output.status(ctx.agent.hasCredentials()),agent:ctx.agent.status()} }));
   app.get("/api/me", (req, res) => res.json({ role: ctx.auth.roleForRequest(req) }));
   app.get("/api/pattern-api.md", (_req, res) => res.type("text/markdown").send(PATTERN_API_DOC));
 

@@ -1,7 +1,7 @@
 import { testPattern } from "../engine/sandbox.js";
 import type { AppContext } from "./context.js";
 import { object, idValue, textValue, validateRig, validateSettings, validateScene, validatePlaylist } from "./validate.js";
-import { deepMerge } from "../store.js";
+import { migrateSettings } from "../defaults.js";
 
 /** Prepare every record before the first saved byte or runtime change. No show state is imported. */
 export function prepareImport(ctx: AppContext, raw: unknown) {
@@ -13,7 +13,7 @@ export function prepareImport(ctx: AppContext, raw: unknown) {
     return v;
   };
   const rig = validateRig(body.rig ?? ctx.rigFile.get());
-  const settings = validateSettings(deepMerge(ctx.settingsFile.get(), body.settings));
+  const settings = validateSettings(migrateSettings(body.settings ?? {}, ctx.settingsFile.get()));
   const ids = new Set<string>();
   const patterns = list(body.patterns, "patterns").map((raw) => {
     const p = object(raw, "pattern");

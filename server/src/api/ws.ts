@@ -98,14 +98,14 @@ export class WsHub {
       const msg: ServerMessage = { type: "toast", level: "info", text: `pattern: ${line}` };
       for (const c of this.clients.values()) if (roleAllows(c.role, "editor")) this.send(c, msg);
     });
-    setInterval(() => this.broadcast({ type: "status", status: ctx.output.status(ctx.agent.hasCredentials()) }), 1000).unref();
+    setInterval(() => this.broadcast({ type: "status", status: {...ctx.output.status(ctx.agent.hasCredentials()), agent:ctx.agent.status()} }), 1000).unref();
   }
 
   snapshot(role: Role): ServerMessage {
     const c = this.ctx;
     return {
       type: "snapshot", rig: c.rigFile.get(), show: c.show.state, patterns: c.library.listPatterns(), scenes: c.library.scenes,
-      playlists: c.library.playlists, settings: this.publicSettings(c.settingsFile.get(), role), status: c.output.status(c.agent.hasCredentials()), presence: this.presence(),
+      playlists: c.library.playlists, settings: this.publicSettings(c.settingsFile.get(), role), status: {...c.output.status(c.agent.hasCredentials()),agent:c.agent.status()}, presence: this.presence(),
     };
   }
 

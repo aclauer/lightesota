@@ -1,4 +1,4 @@
-import { BUILTIN_PROFILES, findProfile, validateWashPatch, type Fixture, type FixtureProfile, type Rig, type Settings, type Scene, type Playlist, type FixtureOverride } from "../../../shared/src/index.js";
+import { BUILTIN_PROFILES, HERMES_MODEL, findProfile, validateWashPatch, type Fixture, type FixtureProfile, type Rig, type Settings, type Scene, type Playlist, type FixtureOverride } from "../../../shared/src/index.js";
 
 export function object(v: unknown, label: string): Record<string, unknown> {
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error(`${label} must be an object`);
@@ -119,7 +119,17 @@ export function validateSettings(raw: unknown): Settings {
   bool(s.artnet.upstream.enabled, "upstream enabled"); finite(s.artnet.upstream.listenPort, 1, 65535, "upstream port", true); textValue(s.artnet.upstream.allowFrom, "upstream source");
   // Stored legacy configuration may be retained for rollback; the output authority ignores it.
   bool(s.hue.enabled, "Hue enabled"); textValue(s.hue.bridgeIp, "Hue IP"); textValue(s.hue.username, "Hue username", 1024); finite(s.hue.rateHz, 1, 50, "Hue rate");
-  textValue(s.agent.model, "model"); if (!["low", "medium", "high", "xhigh", "max"].includes(s.agent.effort)) throw new Error("Invalid effort");
+  for (const key of Object.keys(s.agent)) if (!["provider", "model", "effort", "anthropic", "allowApply", "guestAccess", "guestIntervalSec", "guestTotalPerHour"].includes(key)) throw new Error(`Unknown agent field ${key}`);
+  if (!["hermes", "anthropic"].includes(s.agent.provider)) throw new Error("Invalid agent provider");
+  if (!textValue(s.agent.model, "model").trim()) throw new Error("Agent model is required");
+  if (!["low", "medium", "high", "xhigh", "max"].includes(s.agent.effort)) throw new Error("Invalid effort");
+  if (s.agent.provider === "hermes" && (s.agent.model !== HERMES_MODEL || s.agent.effort !== "max")) throw new Error(`Hermes requires ${HERMES_MODEL} with max reasoning`);
+  if (s.agent.anthropic !== undefined) {
+    const saved = object(s.agent.anthropic, "Anthropic rollback");
+    for (const key of Object.keys(saved)) if (!["model", "effort"].includes(key)) throw new Error(`Unknown agent rollback field ${key}`);
+    if (!textValue(saved.model, "Anthropic model").trim()) throw new Error("Anthropic model is required");
+    if (!["low", "medium", "high", "xhigh", "max"].includes(saved.effort as string)) throw new Error("Invalid Anthropic effort");
+  }
   bool(s.agent.allowApply, "allow apply"); bool(s.agent.guestAccess, "guest access"); finite(s.agent.guestIntervalSec, 1, 86400, "guest interval"); finite(s.agent.guestTotalPerHour, 1, 10000, "guest limit");
   if (!["view", "control", "edit"].includes(s.sharing.guestPermission)) throw new Error("Invalid guest permission");
   textValue(s.sharing.venueName, "venue"); textValue(s.sharing.publicUrl, "public URL", 2048); finite(s.previewFps, 5, 40, "preview fps");
