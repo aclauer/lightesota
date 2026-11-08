@@ -25,6 +25,9 @@ SLUG=local_lightesota
 stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
 git archive --format=tar "$REF" | tar -x -C "$stage"
 cp ha-app/config.yaml "$stage/config.yaml"
+# The Supervisor scans the whole folder for config.* files, so the source copy must not ship
+# or it is taken for a second app (in a folder without a Dockerfile).
+rm "$stage/ha-app/config.yaml"
 echo "$(git rev-parse --short "$REF") $(git log -1 --format=%s "$REF")" > "$stage/DEPLOYED"
 
 if [ -n "$SEED" ]; then
@@ -32,15 +35,17 @@ if [ -n "$SEED" ]; then
     echo "data already present on the box; not seeding"
   else
     echo "seeding /share/lightesota from $SEED"
-    tar -C "$SEED" -c . | "${SSH[@]}" "mkdir -p /share/lightesota && tar -x -C /share/lightesota"
+    tar -C "$SEED" -c . | "${SSH[@]}" "mkdir -p /share/lightesota && tar -x --no-same-owner --no-same-permissions -C /share/lightesota"
   fi
 fi
 
 echo "shipping $(cat "$stage/DEPLOYED") to $HOST:$APP"
-tar -C "$stage" -c . | "${SSH[@]}" "rm -rf $APP && mkdir -p $APP && tar -x -C $APP"
+# Extract as root-owned, world-readable files: tar as root would otherwise keep the laptop uid and modes.
+tar -C "$stage" -c . | "${SSH[@]}" "rm -rf $APP && mkdir -p $APP && tar -x --no-same-owner --no-same-permissions -C $APP && chmod 755 $APP"
 
 echo "building on the box (this takes several minutes the first time)"
-if "${SSH[@]}" "ha apps info $SLUG >/dev/null 2>&1"; then
+# "info" also answers for an app that is only in the store; an installed one has a version.
+if "${SSH[@]}" "ha apps info $SLUG --raw-json 2>/dev/null | grep -q '\"version\":\"'"; then
   "${SSH[@]}" "ha store reload >/dev/null; ha apps rebuild --force $SLUG"
 else
   "${SSH[@]}" "ha store reload >/dev/null; ha apps install $SLUG"
