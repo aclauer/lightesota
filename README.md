@@ -35,6 +35,26 @@ Or with Docker (host networking so UDP reaches the ODE):
 docker compose up -d --build
 ```
 
+### Run it on Home Assistant
+
+The office runs the console as a local app on the Home Assistant Green, so it is always on and
+wired to the same subnet as the ODE. The app is the repo's own `Dockerfile`, built on the box by
+the Supervisor, with [ha-app/config.yaml](ha-app/config.yaml) as the manifest. From a machine
+with key-based SSH to the box's Terminal & SSH app:
+
+```bash
+ha-app/deploy.sh                      # ship the current commit, build, (re)start
+ha-app/deploy.sh --ref event-deployed # ship another ref
+ha-app/deploy.sh --seed-data ./data   # first time: also copy a data folder to the box
+```
+
+The first build takes several minutes; later ones reuse the layers. The app runs on the host
+network, serves the web app on port 8787 of the box, and keeps its data in `/share/lightesota`
+there (visible from the Terminal & SSH app and included in Home Assistant backups). Set the
+agent's API key in the app's Configuration tab (`anthropic_api_key`); an `admin_token` can be
+set there too, otherwise the one in the data folder's `auth.json` is used. Logs are on the
+app's Log tab or `ha apps logs local_lightesota`.
+
 Configuration is by environment variables, see [.env.example](.env.example). A `.env` file in the
 repo root is loaded automatically by `npm start` and `npm run dev` (it is git-ignored). The agent
 needs `ANTHROPIC_API_KEY` there; restart the server after adding it. Everything the app
