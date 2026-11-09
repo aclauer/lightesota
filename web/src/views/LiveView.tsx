@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useEffect, useState as useStateReact } from "react";
 import { Code2, Flashlight, Mic, MicOff, Moon, RotateCcw, Save, X } from "lucide-react";
-import { COORDINATED_SHOWS, findProfile, engineFixtures, isLaserProfile, isHazeProfile, type FixtureOverride } from "@lightesota/shared";
+import { COORDINATED_SHOWS, findProfile, engineIndexOf, isLaserProfile, isHazeProfile, type FixtureOverride } from "@lightesota/shared";
 import { LasersCard } from "../components/LasersCard";
 import { WashesCard } from "../components/WashesCard";
 import { HazeCard } from "../components/HazeCard";
+import { AgentPanel } from "./AgentView";
 import { useStore } from "../state/store";
 import { Stage } from "../components/Stage";
 import { ParamControls } from "../components/ParamControls";
@@ -26,9 +27,12 @@ export function LiveView() {
   const control = can("guest");
   const pattern = patterns.find((p) => p.id === show.patternId);
   const activeScene = scenes.find((s) => s.id === show.activeSceneId);
+  const guestAgent = useStore((s) => s.settings?.agent.guestAccess ?? false);
+  const agentAllowed = can("editor") || (guestAgent && can("guest"));
 
   return (
-    <div className="live">
+    <div className={`live ${agentAllowed ? "with-agent" : ""}`}>
+      {agentAllowed && <AgentPanel />}
       <div className="stage-wrap">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div className="row">
@@ -239,7 +243,7 @@ function FixtureInspector({ id, onClose }: { id: string; onClose: () => void }) 
   if (!f) return null;
   const control = can("guest");
   const profile = findProfile(f.profileId, rig.customProfiles);
-  const idx = engineFixtures(rig).indexOf(f);
+  const idx = engineIndexOf(rig, f.id);
   const c = idx >= 0 ? frame[idx] : undefined;
   const ov: FixtureOverride | undefined = show.overrides[f.id];
   const soloed = show.solo.includes(f.id);

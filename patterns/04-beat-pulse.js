@@ -28,8 +28,17 @@ export default {
     const offPhase = (b + 0.5) % 1;
     const offEnv = Math.exp(-offPhase * p.decay);
     for (const f of ctx.fixtures) {
+      if (f.u !== undefined) continue;
       if (f.kind === "spot") ctx.set(f, [1, 1, 1], { dim: p.spotsOffbeat ? offEnv : env });
       else ctx.set(f, col, { dim: p.floor + (1 - p.floor) * env, strobe: phase < 0.15 ? p.strobeOnBeat : 0 });
+    }
+    // Strips: each pulse ripples out from the center of the stretch to both ends.
+    const prevCol = hex(p.palette[(idx + p.palette.length - 1) % p.palette.length]);
+    for (const f of ctx.strips) {
+      const d = Math.abs(f.u - 0.5) * 2;
+      const front = Math.min(1, phase * 2.2);                   // ripple front position
+      const k = d < front ? 1 : 0;
+      ctx.set(f, mix(prevCol, col, k), { dim: p.floor + (1 - p.floor) * Math.max(env, k * Math.exp(-(front - d) * 3)) });
     }
   },
 };

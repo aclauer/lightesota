@@ -120,6 +120,40 @@ test("set_lights is sticky, preserves brightness-only color/mode, and changes on
   assert.equal(h.show.state.overrides["hue-test"].r, hueColor); assert.equal(h.show.state.overrides["hue-test"].dim, 0.25);
 });
 
+test("Giskard exposes saved gradient IDs once and applies a wash/strip batch with brightness-only color retention", (t) => {
+  const h = harness(t);
+  const strip = { id: "strip", name: "Gradient strip", profileId: "hue-gradient-strip", hueLightId: "fake-strip", x: 5, y: 7, rotation: 0, tags: ["strip"], enabled: true };
+  h.rig.fixtures.push(strip);
+  h.show.engine.setRig(h.rig);
+  const raw = new Float32Array(10 * 8);
+  for (let i = 5; i < 10; i++) { raw[i * 8] = 0.25; raw[i * 8 + 1] = 0.5; raw[i * 8 + 2] = 0.75; raw[i * 8 + 6] = 0.6; }
+  (h.show.engine as unknown as { publishFrame(raw: Float32Array): void }).publishFrame(raw);
+  const snapshot = h.call("state").body.state;
+  assert.deepEqual(snapshot.fixtures.map((f: { id: string }) => f.id), ["w1", "w2", "w3", "w4", "hue-test", "strip"]);
+  assert.equal(snapshot.lights.filter((f: { fixtureId: string }) => f.fixtureId === "strip").length, 1);
+  const result = h.apply({ kind: "set_lights", fixtureIds: ["w1", "strip"], brightness: 25 });
+  assert.equal(result.code, 200, JSON.stringify(result.body));
+  assert.equal(h.show.state.washes.w1.brightness, 64);
+  assert.deepEqual(h.show.state.overrides.strip, { r: 0.25, g: 0.5, b: 0.75, w: 0, a: 0, uv: 0, mix: 1, dim: 0.25 });
+  assert.ok(h.show.engine.lastFrame!.colors.slice(-5).every((c) => c.r === 0.25 && c.g === 0.5 && c.b === 0.75 && c.dim === 0.25));
+  h.rig.fixtures.push({ ...strip });
+  assert.equal(h.call("state").body.state.fixtures.filter((f: { id: string }) => f.id === "strip").length, 1, "duplicate saved identity must not produce duplicate integration targets");
+});
+
+test("Giskard rejects virtual segments and unknown profiles before any selected wash changes", (t) => {
+  const h = harness(t);
+  const strip = { id: "strip", name: "Gradient strip", profileId: "hue-gradient-strip", hueLightId: "fake-strip", x: 5, y: 7, rotation: 0, tags: [], enabled: true };
+  h.rig.fixtures.push(strip, { ...strip, id: "unknown", profileId: "unknown-profile" });
+  h.show.engine.setRig(h.rig);
+  const leaseId = h.lease(), before = JSON.stringify(h.show.state);
+  for (const target of ["strip#0", "unknown", "l1", "h1"]) {
+    const result = h.apply({ kind: "set_lights", fixtureIds: ["w1", target], brightness: 20 }, identity, leaseId);
+    assert.equal(JSON.stringify(h.show.state), before, `${target} must not partially change a wash batch`);
+    assert.equal(result.code, 400, `${target}: ${JSON.stringify(result.body)}`);
+  }
+  assert.equal(h.apply({ kind: "set_lights", fixtureIds: ["w1", "strip"], brightness: 20, color: "#123456" }, identity, leaseId).code, 200, "rejected validation does not consume the lease");
+});
+
 test("all targets and fields validate before any changes; hazards, raw channels and code are excluded", (t) => {
   const h = harness(t); const leaseId = h.lease(); const before = JSON.stringify(h.show.state);
   for (const command of [

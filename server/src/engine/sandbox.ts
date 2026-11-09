@@ -14,6 +14,8 @@ export interface SandboxFixture {
   kind: "wash" | "spot" | "hue" | "other";
   tags: string[];
   isColor: boolean;
+  /** Strip points only: 0..1 position along the whole balcony stretch (all strips end to end, left to right). */
+  u?: number;
 }
 
 /** Per-fixture output: r g b w a uv dim strobe */
@@ -47,6 +49,8 @@ export interface RenderCtx {
   params: ParamValues; state: Record<string, unknown>;
   n: number; fixtures: SandboxFixture[];
   washes: SandboxFixture[]; spots: SandboxFixture[]; hue: SandboxFixture[];
+  /** Strip points in order along the stretch; each has f.u (0 at one end, 1 at the other). */
+  strips: SandboxFixture[];
   /** Number of enabled lasers (not in fixtures). */
   lasers: number;
   random: () => number;
@@ -84,6 +88,7 @@ const pulse = (p: number, width = 0.1) => { p = fract(p); return p < width ? 1 -
 function makeGlobals(log: (...a: unknown[]) => void) {
   return {
     hsv, hsl, hex, mix, scale, paletteAt, PALETTES: Object.freeze({ ...PALETTES }), laserColor: nearestLaserColor,
+    stripDot, stripWipe, stripFill,
     lerp, clamp, clamp01, smoothstep, fract, wrap, luminance,
     noise, noise2, noise3, tri, saw, square, pulse, ease: Object.freeze({ ...ease }),
     Math, Array, Object, JSON, Number, String, Boolean, Map, Set, isFinite, isNaN, parseInt, parseFloat,
@@ -173,6 +178,55 @@ export function compilePattern(source: string, opts: CompileOptions = {}): Compi
   };
 }
 
+// ---- Strip ring primitives (exposed to patterns as globals) ----
+// The strips form a ring of pixels around the room (ctx.strips, each with f.u 0..1). Positions here
+// are in pixels along that ring; the ring wraps, so a dot running off the end comes back at the start.
+
+type AnyColor = RGB | string | number[];
+/** Paint every strip pixel one color. */
+function stripFill(ctx: RenderCtx, color: AnyColor, dim = 1) {
+  for (const f of ctx.strips) ctx.set(f, color, { dim });
+}
+/**
+ * A soft-edged band `width` pixels long centered at pixel `pos` (wraps around the ring), over `bg`.
+ * Pixels outside the band get `bg`; pass null to leave them as they are.
+ */
+function stripDot(ctx: RenderCtx, pos: number, width: number, color: AnyColor, bg: AnyColor | null = [0, 0, 0], edge = 1) {
+  const n = ctx.strips.length; if (n === 0) return;
+  const c = toRGB(color), b = bg === null ? null : toRGB(bg);
+  for (const f of ctx.strips) {
+    const i = (f.u ?? 0) * (n - 1);
+    let d = Math.abs(i - pos) % n; d = Math.min(d, n - d);
+    const k = clamp01((width / 2 + edge / 2 - d) / edge);
+    if (k <= 0) { if (b) ctx.set(f, b); continue; }
+    ctx.set(f, b ? mix(b, c, k) : scale(c, k));
+  }
+}
+/** Pixels behind `front` (in pixels along the ring) show `to`, pixels ahead show `from`, blended over `edge` pixels. */
+function stripWipe(ctx: RenderCtx, front: number, edge: number, from: AnyColor, to: AnyColor) {
+  const n = ctx.strips.length; if (n === 0) return;
+  const a = toRGB(from), b = toRGB(to);
+  for (const f of ctx.strips) {
+    const i = (f.u ?? 0) * (n - 1);
+    ctx.set(f, mix(a, b, clamp01((front - i) / Math.max(0.01, edge))));
+  }
+}
+
+/**
+ * Strip points (tag "strip") in ring order around the room, counter-clockwise on the plan starting
+ * at the balcony's left end: balcony left to right, then up the right wall, then the Network wall
+ * right to left. u is assigned by rank, so a single row still reads 0..1 left to right and strips on
+ * several walls form one continuous run instead of interleaving.
+ */
+export function stripsOf(fixtures: SandboxFixture[]): SandboxFixture[] {
+  const s = fixtures.filter((f) => f.tags.includes("strip") || f.tags.includes("segment"));
+  if (s.length === 0) return s;
+  const key = (f: SandboxFixture) => ((Math.PI - f.angle) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+  s.sort((a, b) => key(a) - key(b));
+  s.forEach((f, i) => { f.u = s.length === 1 ? 0.5 : i / (s.length - 1); });
+  return s;
+}
+
 function mulberry32(seed: number) {
   let a = seed >>> 0;
   return () => {
@@ -217,6 +271,7 @@ export class PatternInstance {
       washes: fixtures.filter((f) => f.kind === "wash"),
       spots: fixtures.filter((f) => f.kind === "spot"),
       hue: fixtures.filter((f) => f.kind === "hue"),
+      strips: stripsOf(fixtures),
       random: mulberry32(seed),
       set(f, color, extras) {
         const i = idx(f);
@@ -272,6 +327,7 @@ export class PatternInstance {
     this.ctx.washes = fixtures.filter((f) => f.kind === "wash");
     this.ctx.spots = fixtures.filter((f) => f.kind === "spot");
     this.ctx.hue = fixtures.filter((f) => f.kind === "hue");
+    this.ctx.strips = stripsOf(fixtures);
     (this as { out: Float32Array }).out = new Float32Array(Math.max(1, fixtures.length) * OUT_STRIDE);
   }
 

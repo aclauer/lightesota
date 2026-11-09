@@ -87,6 +87,7 @@ export class OutputManager {
       if (muted && !this.lastMuted) {
         try { this.hue.cancelPending(); } catch (e) { this.hue.lastError = (e as Error).message; }
       }
+      const gradients = new Map<string, { colors: [number, number, number][]; dim: number; n: number }>();
       for (let i = 0; i < frame.fixtures.length; i++) {
         const f = frame.fixtures[i];
         if (!f.hueLightId) continue;
@@ -95,9 +96,20 @@ export class OutputManager {
         const o = i * OUT_STRIDE;
         const v = frame.values;
         const w = v[o + 3];
-        try {
-          this.hue.setColor(f.hueLightId, Math.min(1, v[o] + w), Math.min(1, v[o + 1] + w), Math.min(1, v[o + 2] + w), muted ? 0 : v[o + 6]);
-        } catch (e) { this.hue.lastError = `Hue output failed: ${(e as Error).message}`; }
+        const rgb: [number, number, number] = [Math.min(1, v[o] + w), Math.min(1, v[o + 1] + w), Math.min(1, v[o + 2] + w)];
+        if (f.segments && f.segment !== undefined) {
+          // Gradient strip point: collect, send once per strip below.
+          const g = gradients.get(f.hueLightId) ?? { colors: new Array(f.segments).fill([0, 0, 0]), dim: 0, n: 0 };
+          g.colors[f.segment] = rgb; g.dim += muted ? 0 : v[o + 6]; g.n++;
+          gradients.set(f.hueLightId, g);
+          continue;
+        }
+        try { this.hue.setColor(f.hueLightId, rgb[0], rgb[1], rgb[2], muted ? 0 : v[o + 6]); }
+        catch (e) { this.hue.lastError = `Hue output failed: ${(e as Error).message}`; }
+      }
+      for (const [id, g] of gradients) {
+        try { this.hue.setGradient(id, g.colors, g.n ? g.dim / g.n : 0); }
+        catch (e) { this.hue.lastError = `Hue output failed: ${(e as Error).message}`; }
       }
     }
     this.lastMuted = muted;

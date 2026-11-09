@@ -6,7 +6,7 @@ This is an opt-in, authenticated gateway API over Lightesota's existing `ShowCon
 
 ## Operator configuration
 
-The server reads these environment variables when constructing the API. They are not saved settings and never appear in settings exports or readback.
+The server reads these environment variables when constructing the API. They are not saved settings and never appear in settings exports or readback. The reconciled [HA wrapper](../ha-app/run.sh) maps the `giskard_*` options in HA Configuration to these variables; its [manifest](../ha-app/config.yaml) declares `giskard_token` as a password and defaults the integration off with empty identity fields. This source support does not activate the proxy or Slack gateway. Preserve existing HA options and `/share/lightesota` data when the operator rebuilds the app.
 
 | Variable | Required value |
 | --- | --- |

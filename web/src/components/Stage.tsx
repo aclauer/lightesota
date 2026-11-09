@@ -61,6 +61,8 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
       const { rig, mode, selectedId, showLabels, live, compact } = propsRef.current;
       const { frame, show } = useStore.getState();
       const enabled = engineFixtures(rig);
+      const slotOf = new Map<string, number[]>(); // saved fixture id -> frame indices (one, or one per segment)
+      enabled.forEach((x, i) => { const key = x.parentId ?? x.id; const arr = slotOf.get(key) ?? []; arr.push(i); slotOf.set(key, arr); });
       const lasers = show?.lasers;
       const blackout = !!show?.blackout;
       const css = getComputedStyle(canvas);
@@ -156,11 +158,13 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
           const luma = frameLuma(c);
           if (luma <= 0.01) continue;
           const p = findProfile(f.profileId, rig.customProfiles);
-          const r = ((p?.size ?? 0.3) / 2) * s.scale;
-          const glow = r * (3 + luma * 4);
+          // Strip points glow softly and locally; a 1.3 m bar is not a 1.3 m wash.
+          const seg = !!f.segments;
+          const r = seg ? (((p?.size ?? 1) * 2.2) / (f.segments ?? 1) / 2) * s.scale : ((p?.size ?? 0.3) / 2) * s.scale;
+          const glow = seg ? r * (1.6 + luma * 1.2) : r * (3 + luma * 4);
           const g = ctx.createRadialGradient(X(f.x), Y(f.y), r * 0.5, X(f.x), Y(f.y), glow);
           const col = frameToCss(c);
-          g.addColorStop(0, col.replace("rgb", "rgba").replace(")", `, ${0.55 * luma})`));
+          g.addColorStop(0, col.replace("rgb", "rgba").replace(")", `, ${(seg ? 0.22 : 0.55) * luma})`));
           g.addColorStop(1, col.replace("rgb", "rgba").replace(")", ", 0)"));
           ctx.fillStyle = g;
           ctx.fillRect(X(f.x) - glow, Y(f.y) - glow, glow * 2, glow * 2);
@@ -171,7 +175,8 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
       ctx.font = '11px "Manrope Variable", system-ui'; ctx.textAlign = "center"; ctx.textBaseline = "top";
       for (let i = 0; i < rig.fixtures.length; i++) {
         const f = rig.fixtures[i];
-        const idx = enabled.indexOf(f);
+        const slots = slotOf.get(f.id) ?? [];
+        const idx = slots.length ? slots[Math.floor(slots.length / 2)] : -1;
         const c = live && idx >= 0 ? frame[idx] : undefined;
         const p = findProfile(f.profileId, rig.customProfiles);
         const r = Math.max(6, ((p?.size ?? 0.3) / 2) * s.scale);
@@ -189,9 +194,14 @@ export function Stage({ rig, mode, selectedId, onSelect, onMove, showLabels = tr
         ctx.beginPath();
         if (laser) { ctx.moveTo(0, -r); ctx.lineTo(r, 0); ctx.lineTo(0, r); ctx.lineTo(-r, 0); ctx.closePath(); }
         else if (p?.shape === "square") ctx.rect(-r, -r, r * 2, r * 2);
-        else if (p?.shape === "bar") ctx.rect(-r * 2.2, -r * 0.45, r * 4.4, r * 0.9);
+        else if (p?.shape === "bar") ctx.rect(-r * 2.2, -r * 0.225, r * 4.4, r * 0.45);
         else ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.fill(); ctx.stroke();
+        if (p?.shape === "bar" && live && slots.length > 1 && f.enabled) {
+          // Gradient strip: paint each point's color along the bar so the blend is visible.
+          const segW = (r * 4.4) / slots.length;
+          for (let k = 0; k < slots.length; k++) { const sc = frame[slots[k]]; if (!sc) continue; ctx.fillStyle = frameToCss(sc); ctx.fillRect(-r * 2.2 + segW * k, -r * 0.225 + 1, segW + 0.5, r * 0.45 - 2); }
+        }
         if (laser && f.enabled) { // laser warning tick
           ctx.strokeStyle = laserOn ? fill : fg3; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, r); ctx.lineTo(0, r + 6); ctx.stroke();
         } else if (p?.shape !== "bar") { // direction tick

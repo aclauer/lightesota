@@ -1,4 +1,63 @@
-# Lighting integration — 2026-11-06
+# Lighting integration changelog
+
+## 2026-11-09 — event branch reconciliation and HA wrapper (source only)
+
+Reconciled main candidate `f9744dc76b893e9a55bcdc12d4e25c6d287955e2` with Andrew's
+event-deployed `104a61ba9884a6ae0270b36cacc19f35a63bf6e1`. Andrew's Live agent column
+keeps its prompt, working indicator and latest reply without a transcript picker. The
+actual provider, pinned Hermes model and configuration/reachability/result status appear
+in that panel, with preview/setup prompt gates. The superseded floating agent tile is removed.
+The pattern editor's Ask agent shortcut now opens that Live panel instead of falling through
+to Settings; the broken and corrected click paths were exercised in the real preview.
+
+Gradient strip expansion, Hue v2 gradient transport and strip order, ring primitives,
+Warm to White Sweep and Ring Runner, segmented stage preview, and strip overrides/flash/solo
+are retained. Saved strip IDs remain control targets; virtual segments stay internal to
+rendering. Manual washes, finite shows, Stop/generation guards, laser boundaries, protected
+haze channels, commissioning, strict authentication and the complete Hermes transport remain.
+Stop now aborts actual pending Hue HTTPS requests, including v2 discovery, so late discovery
+cannot launch a stale write. CA verification and bridge identity checks apply to v1 and v2.
+
+The actual [HA manifest](../ha-app/config.yaml) and [entrypoint](../ha-app/run.sh) now map
+the Hermes/Giskard and physical commissioning options. New Giskard credentials/identities
+default empty; Giskard, physical output and haze default disabled. Secrets use HA password
+fields and are passed as process data without shell evaluation or logging. Old saved HA options
+also receive these closed gates. Existing Anthropic options and saved model/effort remain
+until an explicit provider selection; no saved lighting data is replaced.
+
+The [deployment script](../ha-app/deploy.sh) targets `/local_apps/lightesota`, archives one
+immutable commit including its manifest, ships only the root manifest, requires known-host
+SSH verification and honors local `TMPDIR`. It retains previous source outside HA's scan
+root under `/share/lightesota-deployments` and skips seed data whenever `/share/lightesota`
+already exists. Build/start errors are surfaced. The script has only received static/syntax
+checks here; it has not been invoked. Restoring retained source and rebuilding remains an
+operator action after a failed build/start.
+
+This source revision does not by itself deploy or activate the integration. The existing HA
+source and saved data were backed up before rollout; Giskard's plugin files are staged but
+remain disabled. Company inference authorization, a protected cloud-to-HA route and a real
+Slack acceptance check are still required. The built-in Hermes proxy has no auth; its supported
+command is `hermes proxy start --provider nous --host 127.0.0.1 --port 8645` and it must not be
+exposed directly. See [actual HA setup](../README.md#run-it-on-home-assistant).
+
+Current local verification passes 133 server tests (all 123 main tests, two event tests and
+eight new regressions), 15 web tests, 13 plugin tests, 17 HA adapter tests and eight wrapper
+tests, plus typecheck and production build. Six deployment checks inspect policy and shell
+syntax without executing the script. Hardware I/O is blocked by the preload guard or replaced
+with fake transports before commissioned-policy cases execute.
+Red/green logs cover the provider panel, strip controls/API, Hue cancellation and wrapper
+mapping/worker launch. The final built Live/Settings UI was inspected at desktop and mobile
+widths in both themes, including the scrolled mobile provider controls and disabled preview
+states; no clipping, horizontal overflow or runtime/console errors were found. These are
+software checks with hardware transports vetoed, not live inference or fixture commissioning.
+
+Offline npm cache analysis identifies the existing high advisory as `zod@3.25.76`,
+`GHSA-mrhx-c7xc-m3w5`, via Anthropic's optional production peer dependency. Dependencies
+and lockfile are unchanged; a compatible dependency update remains separate work. The build
+also retains Vite's non-failing warning for the roughly 515 kB CodeEditor chunk.
+
+The dated sections below record earlier verification and its limits; they do not claim this
+reconciliation has been deployed.
 
 ## 2026-11-07 — Hermes inference and bounded Giskard API (for Andrew)
 
@@ -49,8 +108,8 @@ console errors; provider/status contrast and empty-chat mobile scrolling were fi
 Tests use fake provider transports, isolated storage and permanently blocked
 physical outputs. Live Nous inference, protected cloud networking, deployed plugin
 compatibility, Slack delivery and physical lights remain unverified. The HA add-on
-wrapper is separate from this repository's Compose file and still needs the new
-configuration; no live provider has been switched. Rollback is an explicit
+wrapper was still missing this configuration at that checkpoint; the 2026-11-09
+reconciliation above adds it to source. No live provider was switched by these source changes. Rollback is an explicit
 Anthropic selection; Giskard can independently be disabled by unsetting
 `LIGHTESOTA_GISKARD_ENABLED` and restarting through the operator's deployment controls.
 

@@ -36,6 +36,46 @@ Or with Docker (host networking so UDP reaches the ODE):
 docker compose up -d --build
 ```
 
+### Run it on Home Assistant
+
+The office installation is Home Assistant's `local_lightesota` app on the Green. Its source
+directory is `/local_apps/lightesota`, its persistent data is `/share/lightesota`, and it uses
+the repo's `Dockerfile` with [ha-app/config.yaml](ha-app/config.yaml) at the deployment root.
+This reconciled source has not been deployed or commissioned. The operator can use the existing
+authenticated HA terminal or, after review and committing the source, key-based SSH with a
+previously verified host key:
+
+```bash
+ha-app/deploy.sh --ref <reviewed-commit>  # build and start that immutable commit
+ha-app/deploy.sh --seed-data ./data      # seed only if /share/lightesota does not exist
+```
+
+The script archives one resolved commit, moves that commit's manifest to the archive root
+(no duplicate `ha-app/config.yaml`), and retains the previous source outside the Supervisor scan
+under `/share/lightesota-deployments/previous-source.*/source`. It leaves existing data untouched.
+Uncommitted changes are not shipped. A failed build/start is reported; restoring the retained
+source and rebuilding is an operator action, not an automatic application/data rollback.
+
+The app uses host networking and port 8787. Its Configuration tab now passes these options to
+the server through [ha-app/run.sh](ha-app/run.sh), without interpreting option values as shell:
+
+| HA option | Server environment / default |
+| --- | --- |
+| `hermes_base_url`, `hermes_proxy_key` | `LIGHTESOTA_HERMES_BASE_URL`, `LIGHTESOTA_HERMES_PROXY_KEY`; loopback `http://127.0.0.1:8645/v1`, empty optional reverse-proxy password |
+| `preview`, `output_commissioned`, `haze_commissioned` | Corresponding `LIGHTESOTA_*` gates; all false, with physical output and haze blocked until commissioned |
+| `giskard_enabled`, `giskard_token` | `LIGHTESOTA_GISKARD_ENABLED`, `LIGHTESOTA_GISKARD_TOKEN`; false and empty dedicated password |
+| `giskard_team_id`, `giskard_channel_id`, `giskard_user_ids` | Corresponding `LIGHTESOTA_GISKARD_*` identity allowlist; empty until explicitly configured |
+| `anthropic_api_key`, `admin_token`, `data_dir`, `localhost_admin` | Existing options retained; data defaults to `/share/lightesota`. Tokenless localhost admin remains disabled by server policy. |
+
+Existing saved Anthropic settings/model/effort stay selected until an administrator chooses
+Hermes in Settings. Retain the existing Anthropic key for explicit rollback. Hermes requires a
+separate company-authorized subscription proxy; configuring the URL is not proof of connectivity.
+The built-in proxy has no authentication: use loopback or operator-managed protected HTTPS routing,
+and use `hermes_proxy_key` only for a separately authenticated reverse proxy. Giskard must remain
+disabled pending verified identity allowlists, protected routing, gateway setup and single-sender
+cutover. The [Hermes runbook](docs/hermes-inference.md) and [Giskard contract](docs/giskard-lighting.md)
+describe those remaining activation steps. Logs are on the app's Log tab or `ha apps logs local_lightesota`.
+
 Configuration is by environment variables, see [.env.example](.env.example). A `.env` file in the
 repo root is loaded automatically by `npm start` and `npm run dev` (it is git-ignored). New agent
 configurations use a separate Hermes subscription proxy with company Nous authorization;
@@ -77,7 +117,8 @@ not observed light or proof of delivered darkness.
 - **Agent**: describe a look; the agent writes the pattern, test-renders it, applies it and exposes
   the tunable parts as parameters. Hermes uses `deepseek/deepseek-v4.1-flash-1017`, max reasoning
   and thinking enabled. Existing Anthropic configurations are preserved until an administrator
-  explicitly switches provider. Settings and chat show the actual provider and connection status.
+  explicitly switches provider. The Live panel keeps the prompt, working indicator and latest
+  reply, with the actual provider/model/reachability visible; Settings shows the same status.
 - **Stage**: drag fixtures to where they hang, set addresses and tags, add Hue lights.
 - **Settings**: Art-Net target, output ownership, Hue pairing, share links with QR code, theme,
   export/import, DMX monitor.

@@ -174,14 +174,14 @@ export class ShowController extends EventEmitter<ShowEvents> {
   /** Hold current selected output and stop writers that can replace that scope. */
   takeManualControl(ids?: string[]) {
     const fixtures = engineFixtures(this.getRig());
-    const selected = ids ?? fixtures.map((f) => f.id);
-    if (!Array.isArray(selected) || selected.some((id) => !fixtures.some((f) => f.id === id))) throw new Error("Invalid manual fixture selection");
+    const selected = ids ?? [...new Set(fixtures.map((f) => f.parentId ?? f.id))];
+    if (!Array.isArray(selected) || selected.some((id) => !fixtures.some((f) => (f.parentId ?? f.id) === id))) throw new Error("Invalid manual fixture selection");
     this.ownershipBarrier(); this.invalidatePatternLasers(); this.stopPlaylist(false);
     this.detachShowWashes(selected);
     const frame = this.engine.lastFrame;
     for (const id of selected) {
-      const f = fixtures.find((item) => item.id === id)!;
-      const i = frame?.fixtures.findIndex((item) => item.id === id) ?? -1;
+      const f = fixtures.find((item) => (item.parentId ?? item.id) === id)!;
+      const i = frame?.fixtures.findIndex((item) => (item.parentId ?? item.id) === id) ?? -1;
       const offset = i * 8;
       const existing = this.state.washes[id];
       if (existing && existing.owner !== "pattern") { existing.owner = "manual"; continue; }
@@ -333,7 +333,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
   }
   /** A flash may restore only inside the same ownership generation that started it. */
   testFixture(id: string, seconds = 2) {
-    const f = engineFixtures(this.getRig()).find((item) => item.id === id);
+    const f = engineFixtures(this.getRig()).find((item) => (item.parentId ?? item.id) === id);
     if (!f || isLaserFixture(f, this.getRig())) throw new Error("Only ordinary fixtures can be flashed");
     const oldWash = this.state.washes[id] ? { ...this.state.washes[id], rgbw: [...this.state.washes[id].rgbw] as WashState["rgbw"] } : undefined;
     const oldOverride = this.state.overrides[id];
@@ -702,7 +702,7 @@ export class ShowController extends EventEmitter<ShowEvents> {
 
   // ---- overrides / solo ----
   setOverride(fixtureId: string, ov: FixtureOverride | null) {
-    if (!engineFixtures(this.getRig()).some((f) => f.id === fixtureId)) throw new Error("Not an enabled ordinary fixture");
+    if (!engineFixtures(this.getRig()).some((f) => (f.parentId ?? f.id) === fixtureId)) throw new Error("Not an enabled ordinary fixture");
     if (ov && (Object.values(ov).some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1))) throw new Error("Override values must be finite 0..1");
     if (washFixtures(this.getRig()).some((f) => f.id === fixtureId)) {
       if (!ov) { this.releaseWashes([fixtureId]); return; }

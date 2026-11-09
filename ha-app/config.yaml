@@ -1,0 +1,48 @@
+# Home Assistant app manifest. ha-app/deploy.sh moves the archived copy to the app root on
+# the Home Assistant box, next to the repo's Dockerfile, and the Supervisor builds it there.
+name: Lightesota
+version: "0.1.0"
+slug: lightesota
+description: Office lighting console - patterns, agent, Art-Net to the ODE, Hue strips
+url: https://github.com/aclauer/lightesota
+arch:
+  - aarch64
+  - amd64
+startup: application
+boot: auto
+# Host networking so Art-Net UDP reaches the ODE and the Hue bridge is on the LAN; the web app is on port 8787.
+host_network: true
+map:
+  - type: share
+    read_only: false
+options:
+  anthropic_api_key: ""
+  admin_token: ""
+  data_dir: /share/lightesota
+  localhost_admin: true
+  hermes_base_url: "http://127.0.0.1:8645/v1"
+  hermes_proxy_key: ""
+  preview: false
+  output_commissioned: false
+  haze_commissioned: false
+  giskard_enabled: false
+  giskard_token: ""
+  giskard_team_id: ""
+  giskard_channel_id: ""
+  giskard_user_ids: ""
+schema:
+  anthropic_api_key: password?
+  admin_token: password?
+  data_dir: str
+  # Retained for existing options; server authentication never trusts localhost.
+  localhost_admin: bool
+  hermes_base_url: str
+  hermes_proxy_key: password?
+  preview: bool
+  output_commissioned: bool
+  haze_commissioned: bool
+  giskard_enabled: bool
+  giskard_token: password?
+  giskard_team_id: str?
+  giskard_channel_id: str?
+  giskard_user_ids: str?

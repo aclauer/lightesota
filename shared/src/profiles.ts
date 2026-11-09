@@ -164,6 +164,18 @@ export const BUILTIN_PROFILES: FixtureProfile[] = [
     channels: [],
     notes: "Driven through the Hue Bridge REST API; updates are rate limited.",
   },
+  {
+    id: "hue-gradient-strip",
+    name: "Philips Hue gradient lightstrip (5 color points)",
+    manufacturer: "Signify",
+    transport: "hue",
+    colorModel: "rgb",
+    shape: "bar",
+    size: 1.3,
+    gradientPoints: 5,
+    channels: [],
+    notes: "Gradient strips (Flux, Ambiance gradient, Play gradient). Patterns paint 5 points along the bar and the strip blends between them. Updates are rate limited by the bridge.",
+  },
 ];
 
 export function profileFootprint(p: FixtureProfile): number {

@@ -21,7 +21,13 @@ export default {
     const beatIdx = Math.floor(ctx.beat);
     const env = Math.exp(-ctx.beatPhase * p.decay);
     const burst = p.burst && Math.floor(ctx.bar) % 4 === 3 && ctx.beat % 4 >= 3;
+    // Strips: the palette slides along the stretch one color per beat, with the strobe burst running white.
+    for (const f of ctx.strips) {
+      const col = burst ? [1, 1, 1] : paletteAt(p.palette, (beatIdx + f.u * p.movement * 3) / p.palette.length);
+      ctx.set(f, col, { dim: burst ? 1 : p.floor + (1 - p.floor) * env });
+    }
     for (const f of ctx.fixtures) {
+      if (f.u !== undefined) continue;
       const shift = Math.floor(f.nx * 3 * p.movement);
       const col = hex(p.palette[(beatIdx + shift) % p.palette.length]);
       if (f.kind === "spot") {

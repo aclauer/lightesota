@@ -14,15 +14,23 @@ export default {
     glide: { type: "boolean", default: true, label: "Glide between colors" },
     offset: { type: "number", default: 0, min: 0, max: 1, step: 0.01, label: "Offset by position" },
     spots: { type: "number", default: 0.5, min: 0, max: 1, step: 0.01, label: "Pinspot level" },
+    stripSpan: { type: "number", default: 1, min: 0, max: 3, step: 0.1, label: "Colors across the strips" },
   },
   render(ctx) {
     const p = ctx.params;
     const base = ctx.beat / p.beatsPerColor / p.palette.length;
     for (const f of ctx.fixtures) {
+      if (f.u !== undefined) continue; // strips are painted below
       let t = base + f.nx * p.offset;
       if (!p.glide) t = Math.floor(t * p.palette.length) / p.palette.length;
       if (f.kind === "spot") ctx.set(f, [1, 1, 1], { dim: p.spots });
       else ctx.set(f, paletteAt(p.palette, t));
+    }
+    // Strips: the current color ramps into the next one across the whole stretch, so the bar
+    // visibly changes color end to end as the cycle advances.
+    for (const f of ctx.strips) {
+      const t = base + (f.u * p.stripSpan) / p.palette.length;
+      ctx.set(f, paletteAt(p.palette, p.glide ? t : Math.floor(t * p.palette.length) / p.palette.length));
     }
   },
 };

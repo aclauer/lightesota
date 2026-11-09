@@ -1,8 +1,9 @@
 # Hermes / Nous inference
 
 Lightesota retains its own twelve-round lighting tool loop, permission checks, guest quotas,
-pattern compiler, private device conversations and fresh-action generation barrier. Hermes is
-only the subscription-backed inference transport. It receives no shell, browser, networking,
+pattern compiler, private device conversations and fresh-action generation barrier. The
+Hermes / Nous provider is only an OpenAI-compatible inference transport, through a company
+subscription proxy or the company API route below. It receives no shell, browser, networking,
 filesystem or general Hermes agent tools.
 
 New configurations select `agent.provider: "hermes"`, model
@@ -43,16 +44,41 @@ LIGHTESOTA_HAZE_COMMISSIONED=0
 
 Only HTTP on `127.0.0.1`, `localhost`, or `[::1]`, or an explicitly configured trusted HTTPS
 endpoint is accepted. Userinfo, query strings and fragments are rejected. The URL is server env
-only; a chat/tool/settings import cannot choose it. Redirects are rejected, so the local key is
-never forwarded by a redirect. HTTPS certificate validation uses Node's normal trusted roots.
-Compose passes these variables through; its host networking must actually share loopback with
-the proxy. A proxy inside a different network namespace needs an explicitly protected HTTPS
-endpoint, not an arbitrary LAN HTTP address.
+only; a chat/tool/settings import cannot choose it. Redirects are rejected, so the configured
+bearer credential is never forwarded by a redirect. HTTPS certificate validation uses Node's
+normal trusted roots.
 
-The observed office installation is Home Assistant's `local_lightesota` add-on at
-`10.10.0.192:8787`, with data in `/share/lightesota`, not this Compose deployment. Its wrapper
-must pass the new variables explicitly. That wrapper is not in this repository and was not
-accessible through the inspected Terminal & SSH mounts; publishing this code does not update it.
+### Company API alternative (no local proxy process)
+
+The [official Nous API](https://portal.nousresearch.com/api-docs) also documents an
+OpenAI-compatible endpoint at `https://inference-api.nousresearch.com/v1` with API-key bearer
+authentication. This adapter can target that endpoint directly: set `LIGHTESOTA_HERMES_BASE_URL`
+to that URL and put a **dedicated company-issued API key**, not an OAuth token, in the existing
+`LIGHTESOTA_HERMES_PROXY_KEY` secret field. In HA those options are `hermes_base_url` and
+`hermes_proxy_key`. The field name is retained for compatibility; for this route it holds the
+company API key rather than a reverse-proxy credential. No Hermes proxy daemon or laptop is
+required for this route.
+
+The company owner must create and enter the key through the protected deployment UI. The
+API documentation says to add credits or activate a subscription; do not assume hosted-agent
+entitlements or spend limits transfer unchanged. Access to the exact DeepSeek model and its
+streaming/tool protocol must pass a real request before switching the working provider.
+That direct-company-API acceptance check has **not** yet been performed.
+
+For the separate subscription-proxy route, Compose host networking must actually share
+loopback with the proxy. A proxy inside a different network namespace needs an explicitly
+protected HTTPS endpoint, not an arbitrary LAN HTTP address.
+
+The office installation is Home Assistant's `local_lightesota` app at `10.10.0.192:8787`,
+with source in `/local_apps/lightesota` and data in `/share/lightesota`. The reconciled
+[HA wrapper](../ha-app/run.sh) and [manifest](../ha-app/config.yaml) now ship here and pass the
+Hermes, Giskard, preview and commissioning variables explicitly from HA Configuration options.
+Use `hermes_base_url` and optional password `hermes_proxy_key`; the latter is either the
+protecting reverse proxy's secret or the dedicated company API key for the direct route above.
+Never put an OAuth token there. Saved Anthropic provider/model/effort and existing options are retained;
+choose Hermes explicitly in Settings. The source reconciliation has not deployed or rebuilt the
+app, started a proxy, authorized a company account or delivered a Slack message. See the
+[HA setup](../README.md#run-it-on-home-assistant) for the option mapping and retained-source rollback.
 
 Restart only after checking the deployment configuration. `LIGHTESOTA_PREVIEW=1` permanently
 vetoes all production provider requests and physical outputs, even when commissioning/credentials
@@ -62,7 +88,7 @@ uncommissioned; that live inference check has **not** been performed. No live pr
 
 ## Status and failure handling
 
-Settings/chat and health/WebSocket status report the actual provider, model, reasoning and:
+Settings, the Live agent panel and health/WebSocket status report the actual provider, model, reasoning and:
 
 | State | Meaning |
 | --- | --- |

@@ -154,3 +154,47 @@ test("malformed pattern laser entries fail closed without losing valid palettes 
   assert.equal(laserStateFromPattern({ mode: "sound", musicColor: "blue" }).mode, "music");
   assert.deepEqual(laserBytes({ ...defaultLaserState(), mode: "manual", pan: NaN }, true, false), ZEROS);
 });
+
+test("gradient strips expand into evenly spaced virtual fixtures and fold back to one strip", async () => {
+  const rig: Rig = {
+    room: { name: "t", width: 10, height: 8, gridStep: 0.5, shapes: [] }, customProfiles: [], protectedRanges: [],
+    fixtures: [
+      { id: "w1", name: "Wash 1", profileId: "chauvet-slimpar-pro-h-12ch", universe: 0, address: 101, x: 0, y: 0, rotation: 0, tags: [], enabled: true },
+      { id: "hue1", name: "Strip 5", profileId: "hue-gradient-strip", hueLightId: "1", x: 5, y: 7.4, rotation: 0, tags: ["strip"], enabled: true },
+    ],
+  };
+  const { engineIndexOf } = await import("../../../shared/src/index.js");
+  const ef = engineFixtures(rig);
+  assert.equal(ef.length, 6);
+  const segs = ef.filter((f) => f.parentId === "hue1");
+  assert.equal(segs.length, 5);
+  assert.deepEqual(segs.map((f) => f.segment), [0, 1, 2, 3, 4]);
+  assert.ok(segs[0].x < segs[4].x && Math.abs(segs[2].x - 5) < 1e-9, "points run along the bar, centered on the fixture");
+  assert.ok(segs.every((f) => f.hueLightId === "1" && f.tags.includes("segment")));
+  assert.equal(engineIndexOf(rig, "hue1"), 1);
+  const { resample } = await import("./hue.js");
+  assert.deepEqual(resample([[0, 0], [1, 1]], 3), [[0, 0], [0.5, 0.5], [1, 1]]);
+  assert.equal(resample([[0, 0], [0.2, 0.2], [0.4, 0.4], [0.6, 0.6], [0.8, 0.8], [1, 1]], 5).length, 5);
+});
+
+test("strips on two walls form one ring: balcony left to right, then the Network wall right to left", async () => {
+  const { stripsOf } = await import("../engine/sandbox.js");
+  const { toSandboxFixtures } = await import("../engine/engine.js");
+  const rig: Rig = {
+    room: { name: "t", width: 10, height: 8, gridStep: 0.5, shapes: [] }, customProfiles: [], protectedRanges: [],
+    fixtures: [
+      { id: "b1", name: "B left", profileId: "hue-gradient-strip", hueLightId: "1", x: 1.67, y: 7.4, rotation: 0, tags: ["strip"], enabled: true },
+      { id: "b2", name: "B right", profileId: "hue-gradient-strip", hueLightId: "2", x: 8.33, y: 7.4, rotation: 0, tags: ["strip"], enabled: true },
+      { id: "n1", name: "N right", profileId: "hue-gradient-strip", hueLightId: "3", x: 8.33, y: 1.1, rotation: 180, tags: ["strip"], enabled: true },
+      { id: "n2", name: "N mid", profileId: "hue-gradient-strip", hueLightId: "4", x: 5, y: 1.1, rotation: 0, tags: ["strip"], enabled: true },
+    ],
+  };
+  const ef = engineFixtures(rig);
+  const ring = stripsOf(toSandboxFixtures(ef, rig));
+  const order = ring.map((f) => f.id.split("#")[0]).filter((id, i, a) => a.indexOf(id) === i);
+  assert.deepEqual(order, ["b1", "b2", "n1", "n2"]);
+  assert.equal(ring[0].u, 0); assert.equal(ring.at(-1)!.u, 1);
+  // Within a strip the points run with the ring too (rotation 180 on the Network wall keeps its plug-end first).
+  const n1 = ring.filter((f) => f.id.startsWith("n1#")).map((f) => f.id);
+  assert.deepEqual(n1, ["n1#0", "n1#1", "n1#2", "n1#3", "n1#4"]);
+});

@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
-import { engineFixtures, findProfile, washFixtures, washSide, type FixtureOverride, type Rig, type WashMode } from "../../../shared/src/index.js";
+import { findProfile, washFixtures, washSide, type FixtureOverride, type Rig, type WashMode } from "../../../shared/src/index.js";
 import type { ShowController } from "../show.js";
 import { OUTPUT_COMMISSIONED, PREVIEW } from "../output/policy.js";
 import { isLoopback } from "./auth.js";
@@ -107,8 +107,15 @@ export function createGiskardApi(ctx: Context, options: GiskardOptions = {}) {
   }
   function ordinaryFixtures() {
     const rig = ctx.rigFile.get();
-    // Unknown profiles never gain ordinary-fixture authority through incomplete rig data.
-    return engineFixtures(rig).filter((f) => !!findProfile(f.profileId, rig.customProfiles));
+    const seen = new Set<string>();
+    // Integration targets are saved fixtures, never internal gradient segments. Unknown
+    // profiles and hazards cannot gain ordinary-fixture authority through incomplete rig data.
+    return rig.fixtures.filter((f) => {
+      const profile = findProfile(f.profileId, rig.customProfiles);
+      if (!f.enabled || !profile || profile.kind === "laser" || profile.kind === "haze" || seen.has(f.id)) return false;
+      seen.add(f.id);
+      return true;
+    });
   }
   function state() {
     const s = ctx.show.state, rig = ctx.rigFile.get(), fixtures = ordinaryFixtures();
@@ -163,7 +170,7 @@ export function createGiskardApi(ctx: Context, options: GiskardOptions = {}) {
     const overrides: { id: string; ov: FixtureOverride }[] = [];
     for (const id of command.fixtureIds.filter((id) => !washIds.has(id))) {
       const previous = ctx.show.state.overrides[id];
-      const frame = ctx.show.engine.lastFrame, i = frame?.fixtures.findIndex((f) => f.id === id) ?? -1;
+      const frame = ctx.show.engine.lastFrame, i = frame?.fixtures.findIndex((f) => (f.parentId ?? f.id) === id) ?? -1;
       const values = i >= 0 && frame ? Array.from(frame.values.slice(i * 8, i * 8 + 6)) : [0, 0, 0, 0, 0, 0];
       const ov: FixtureOverride = { r: values[0], g: values[1], b: values[2], w: values[3], a: values[4], uv: values[5], ...previous, mix: 1, dim: command.brightness / 100 };
       if (rgb) Object.assign(ov, { r: rgb[0] / 255, g: rgb[1] / 255, b: rgb[2] / 255, w: 0, a: 0, uv: 0 });

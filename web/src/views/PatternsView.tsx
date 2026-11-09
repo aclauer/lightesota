@@ -164,7 +164,7 @@ function PatternEditor({ patternId }: { patternId: string }) {
           </div>
           <div className="row">
             <button className="btn sm ghost" onClick={() => setDocOpen(true)} title="Pattern API reference"><BookOpen /> API</button>
-            <button className="btn sm ghost" onClick={() => setView("agent")} title="Ask the agent to change this pattern"><Bot /> Ask agent</button>
+            <button className="btn sm ghost" onClick={() => setView("live")} title="Ask the agent to change this pattern"><Bot /> Ask agent</button>
             {!isNew && <button className="btn sm ghost" onClick={() => void dup()} title="Duplicate"><Copy /></button>}
             {!isNew && !meta?.builtin && (!confirm ? <button className="btn sm ghost" onClick={() => setConfirm(true)} title="Delete"><Trash2 /></button> : <button className="btn sm danger" onClick={del}>Delete?</button>)}
             <button className="btn sm" disabled={saving || source === null} onClick={() => void save(false)}><Save /> Save</button>
