@@ -1,5 +1,16 @@
 # Lighting integration changelog
 
+## 2026-11-09 — live pattern color correction
+
+The first live natural-language sweep reached the agent and started its new pattern,
+but palette hex strings passed directly to `mix` became invalid numeric colors and
+rendered black. `mix` now accepts those strings as well as its existing RGB arrays,
+using the same hex conversion as the rest of the renderer. The sandbox regression
+reproduced black output before the fix and verifies finite, moving blue/cyan output,
+15% dimming and no strobe afterward. Existing numeric RGB behavior is unchanged.
+The full application tests, typechecks and build passed. No transport, permissions,
+provider, fixture settings or saved patterns are changed by this correction.
+
 ## 2026-11-09 — natural-language lighting requests (source; parent rollout pending)
 
 Giskard gains `lighting_request`: teammates can ask for a moving look without supplying

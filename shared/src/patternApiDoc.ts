@@ -75,6 +75,7 @@ ctx fields, read-only unless noted:
 
 Helpers available as globals:
   hsv(h, s, v), hsl(h, s, l), hex("#ff0000"), mix(a, b, t), scale(c, k), paletteAt(colorsArray, t),
+  mix accepts RGB arrays or hex strings (including palette parameters); it returns an RGB array.
   PALETTES.rainbow / sunset / ocean / forest / candy / fire / ice / neon / warm,
   lerp, clamp, clamp01, smoothstep, fract, wrap, luminance,
   noise(x), noise2(x, y), noise3(x, y, z) (smooth value noise in -1..1),

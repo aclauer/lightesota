@@ -69,7 +69,10 @@ export function toHex([r, g, b]: RGB): string {
   return `#${c(r)}${c(g)}${c(b)}`;
 }
 
-export function mix(a: RGB, b: RGB, t: number): RGB {
+/** Blend numeric RGB or the hex colors returned by color/palette parameters. */
+export function mix(a: RGB | string, b: RGB | string, t: number): RGB {
+  if (typeof a === "string") a = hex(a);
+  if (typeof b === "string") b = hex(b);
   t = clamp01(t);
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 }

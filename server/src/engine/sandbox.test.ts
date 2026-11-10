@@ -11,6 +11,32 @@ test("compiles an ES-module style pattern and renders", () => {
   assert.deepEqual(Object.keys(r.compiled.params), ["color"]);
 });
 
+test("palette hex colors mix into finite, moving blue/cyan output", () => {
+  const source = (convert: boolean) => `export default {
+    params: { colors: { type: "palette", default: ["#1230ff", "#00e6ff"] } },
+    render(ctx) { for (const f of ctx.fixtures) {
+      const [a, b] = ctx.params.colors;
+      const phase = 0.5 + 0.5 * Math.sin(Math.PI * 2 * (f.nx * 0.85 - ctx.beat / 16));
+      ctx.set(f, mix(${convert ? "hex(a), hex(b)" : "a, b"}, phase), { dim: 0.15 });
+    } }
+  };`;
+  const fixtures = syntheticFixtures();
+  const direct = new PatternInstance(compilePattern(source(false)), fixtures, {}, 1);
+  const explicit = new PatternInstance(compilePattern(source(true)), fixtures, {}, 1);
+  const frames: number[][] = [];
+  for (let frame = 0; frame < 3; frame++) {
+    direct.render(0.5, 120, frame);
+    explicit.render(0.5, 120, frame);
+    assert.deepEqual([...direct.out], [...explicit.out], "hex inputs must match explicit conversion");
+    assert.ok(direct.out.every(Number.isFinite));
+    assert.ok(direct.out[2] > 0, "the requested blue must emit, not silently become black");
+    assert.ok(Math.abs(direct.out[6] - 0.15) < 1e-6);
+    assert.equal(direct.out[7], 0, "no strobe");
+    frames.push([...direct.out]);
+  }
+  assert.notDeepEqual(frames[0], frames[2], "the sweep must animate");
+});
+
 test("rejects syntax errors and missing render", () => {
   assert.throws(() => compilePattern("export default { name: 'x', render(ctx) { ctx.fill( } }"), /Syntax error/);
   assert.throws(() => compilePattern("module.exports = { name: 'x' }"), /render/);
