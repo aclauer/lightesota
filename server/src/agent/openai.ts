@@ -162,7 +162,15 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
       const choice: unknown = parsed.choices[0];
       if (!isRecord(choice) || choice.index !== 0 || !isRecord(choice.delta)) throw protocolError();
       const delta = choice.delta;
-      if (finishReason !== null && (Object.keys(delta).length || choice.finish_reason != null)) throw protocolError();
+      if (finishReason !== null && (Object.keys(delta).length || choice.finish_reason != null)) {
+        // Nous can repeat its terminal choice. Accept only the same reason and
+        // observed inert delta fields; never append content or tool fragments.
+        if (!acceptsFinishedEof || choice.finish_reason !== finishReason
+          || !Object.entries(delta).every(([key, value]) =>
+            (key === "role" && value === "assistant") || (key === "content" && value === "")
+            || (key === "reasoning" && value === null))) throw protocolError();
+        return;
+      }
       if (delta.refusal != null) {
         if (typeof delta.refusal !== "string") throw protocolError();
         refused ||= delta.refusal.length > 0;

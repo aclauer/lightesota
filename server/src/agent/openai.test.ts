@@ -74,15 +74,33 @@ test("SSE supports LF, comments, multiline data and usage after the final reason
 
 const nousBaseUrl = "https://inference-api.nousresearch.com/v1";
 
+test("Nous repeated completion metadata accepts the captured empty-tool stream at clean EOF", async () => {
+  // Captured event order, with independently verified raw terminal fields restored.
+  // No DONE marker; the final SSE event ends with LF LF.
+  const source = (packet({ role: "assistant" }).repeat(8)
+    + packet({ role: "assistant", tool_calls: [{ index: 0, id: "call_probe", type: "function", function: { name: "get_show_state", arguments: "" } }] })
+    + packet({ role: "assistant", tool_calls: [{ index: 0, function: { arguments: "" } }] })
+    + packet({ role: "assistant", tool_calls: [{ index: 0, function: { arguments: "{}" } }] })
+    + packet({ content: "", role: "assistant", reasoning: null }, "tool_calls")
+    + packet({ content: "", role: "assistant" }, "tool_calls")).replaceAll("\r\n", "\n");
+  const publicText: string[] = [];
+  const result = await run(source, { baseUrl: nousBaseUrl, fetch: async () => response(source, 1), onText: (text) => publicText.push(text) });
+  assert.equal(result.finishReason, "tool_calls");
+  assert.deepEqual(result.toolCalls, [{ id: "call_probe", name: "get_show_state", input: {} }]);
+  assert.equal(result.message.reasoning_content, undefined);
+  assert.deepEqual(publicText, []);
+});
+
 test("Nous direct inference accepts a clean EOF after an explicit finish reason and preserves the tool-result round", async () => {
   const tool = packet({ reasoning_content: "Synthetic private context" })
     + packet({ tool_calls: [{ index: 0, id: "probe_1", type: "function", function: { name: "connectivity_probe", arguments: '{"marker":"check"}' } }] })
-    + packet({}, "tool_calls")
+    + packet({}, "tool_calls") + packet({ role: "assistant", content: "", reasoning: null }, "tool_calls")
     + 'data: {"choices":[],"usage":{"completion_tokens":4}}\n\n';
   const requests: OpenAIMessage[][] = [];
   const transport: typeof fetch = async (_url, options) => {
     requests.push(JSON.parse(String(options!.body)).messages);
-    return response(requests.length === 1 ? tool : packet({ content: "CONNECTIVITY_OK" }, "stop"), 1);
+    return response(requests.length === 1 ? tool : packet({ content: "CONNECTIVITY_OK" }, "stop")
+      + packet({ role: "assistant", content: "" }, "stop"), 1);
   };
   const first = await run(tool, { baseUrl: nousBaseUrl, fetch: transport });
   assert.deepEqual(first.toolCalls, [{ id: "probe_1", name: "connectivity_probe", input: { marker: "check" } }]);
@@ -92,14 +110,51 @@ test("Nous direct inference accepts a clean EOF after an explicit finish reason 
   assert.equal(requests[1][1].reasoning_content, "Synthetic private context");
 });
 
+test("Nous repeated completion metadata rejects changed reasons, new deltas, and malformed fields", async () => {
+  const complete = packet({ tool_calls: [{ index: 0, id: "probe", type: "function", function: { name: "get_show_state", arguments: "{}" } }] }, "tool_calls");
+  const invalid = [
+    packet({ role: "assistant", content: "" }, "stop"),
+    packet({ role: "assistant", content: "" }),
+    packet({ content: "late" }, "tool_calls"),
+    packet({ reasoning: "private late reasoning" }, "tool_calls"),
+    packet({ reasoning_content: "private late reasoning" }, "tool_calls"),
+    packet({ tool_calls: [{ index: 0, function: { arguments: "{}" } }] }, "tool_calls"),
+    packet({ tool_calls: [] }, "tool_calls"),
+    packet({ tool_calls: null }, "tool_calls"),
+    packet({ refusal: "No" }, "tool_calls"),
+    packet({ unknown: null }, "tool_calls"),
+    ...[{ role: "user" }, { role: null }, { content: null }, { content: [] }, { reasoning: {} }, [], null]
+      .map((delta) => packet(delta, "tool_calls")),
+    'data: {"choices":[{"index":0,"delta":{},"finish_reason":3}]}\n\n',
+    'data: {"choices":[{"index":1,"delta":{},"finish_reason":"tool_calls"}]}\n\n',
+  ];
+  for (const trailing of invalid) {
+    const text: string[] = [];
+    const deltas: unknown[] = [];
+    await assert.rejects(run(complete + trailing, { baseUrl: nousBaseUrl, onText: (s) => text.push(s), onToolDelta: (delta) => deltas.push(delta) }),
+      (error: unknown) => error instanceof ProviderError && error.code === "protocol", trailing);
+    assert.deepEqual(text, [], "trailing content/reasoning must not reach the public transcript");
+    assert.equal(deltas.length, 1, "only the original non-executable tool preview may be emitted");
+  }
+});
+
+test("repeated completion metadata remains invalid for every other endpoint even with DONE", async () => {
+  const source = packet({ content: "Ready" }, "stop") + packet({ role: "assistant", content: "" }, "stop") + done;
+  for (const baseUrl of [undefined, "https://broker.example/v1", "https://inference-api.nousresearch.com/v2", "https://inference-api.nousresearch.com.evil/v1"])
+    await assert.rejects(run(source, { baseUrl }), (error: unknown) => error instanceof ProviderError && error.code === "protocol");
+});
+
 test("Nous EOF compatibility does not accept an open, failed, incomplete, or refused stream", async () => {
   const call = packet({ tool_calls: [{ index: 0, id: "probe_2", type: "function", function: { name: "connectivity_probe", arguments: "{}" } }] });
-  const complete = call + packet({}, "tool_calls");
+  const complete = call + packet({}, "tool_calls") + packet({ role: "assistant", content: "" }, "tool_calls");
   for (const invalid of [call, complete + 'data: {"choices":', complete + 'data: {}\n',
     call + packet({}, "length"), call + packet({}, "content_filter"), call + packet({}, "stop"),
     complete + packet({ content: "late" })]) {
     await assert.rejects(run(invalid, { baseUrl: nousBaseUrl }), ProviderError);
   }
+  for (const [reason, code] of [["length", "truncated"], ["content_filter", "refused"], ["refusal", "refused"]])
+    await assert.rejects(run(call + packet({}, reason) + packet({ role: "assistant", content: "" }, reason), { baseUrl: nousBaseUrl }),
+      (error: unknown) => error instanceof ProviderError && error.code === code);
   await assert.rejects(run("", { baseUrl: nousBaseUrl, timeoutMs: 10, fetch: async () => new Response(new ReadableStream({
     start(controller) { controller.enqueue(encoder.encode(complete)); },
   }), { headers: { "content-type": "text/event-stream" } }) }),

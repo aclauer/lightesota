@@ -1,5 +1,14 @@
 # Lighting integration changelog
 
+## 2026-11-09 — Nous repeated completion metadata (source, live acceptance pending)
+
+The exact verified Nous endpoint can now repeat the same stream finish reason with only
+inert metadata: assistant role, empty content and null reasoning. Changed reasons, new
+text/reasoning, tool deltas and unknown delta fields still fail closed; other endpoints
+retain their strict completion behavior. Tools remain unavailable for execution until
+stream termination and complete validation. Offline regression tests reproduce the captured
+empty-argument tool stream; a successful live Lightesota model turn remains parent-owned.
+
 ## 2026-11-09 — relay candidate accepted locally; activation remains separate
 
 The bounded Vercel relay and HA outbound connector passed the full application tests,
