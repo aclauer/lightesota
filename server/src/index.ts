@@ -15,6 +15,7 @@ import { ShowController } from "./show.js";
 import { JsonFile } from "./store.js";
 import { OUTPUT_VETO, PREVIEW } from "./output/policy.js";
 import { validateRig, validateSettings } from "./api/validate.js";
+import { startGiskardConnector } from "./integrations/giskard-relay.js";
 
 ensureDataDirs();
 
@@ -59,7 +60,9 @@ hub = new WsHub(server, ctx);
 show.engine.on("log", (l) => console.log("[engine]", l));
 show.start();
 
+let stopConnector = () => {};
 server.listen(config.port, config.host, () => {
+  stopConnector = startGiskardConnector(process.env, config.port, config.dataDir);
   const s = settingsFile.get();
   console.log(`\nLightesota server on http://localhost:${config.port}`);
   for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
@@ -77,6 +80,7 @@ async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`\n${signal}: blackout and exit`);
+  stopConnector();
   show.stop();
   library.flush();
   await output.blackoutAndClose();

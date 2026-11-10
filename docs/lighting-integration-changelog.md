@@ -1,5 +1,97 @@
 # Lighting integration changelog
 
+## 2026-11-09 — relay candidate accepted locally; activation remains separate
+
+The bounded Vercel relay and HA outbound connector passed the full application tests,
+typecheck/build, relay tests/build, HA wrapper and integration tests, and seven real
+loopback bridge tests with hardware transports vetoed. The final plugin passes all
+16 tests plus the real Hermes loader/middleware and real HTTP preview checks for
+selected targets, duplicate denial, durable Stop and fresh trusted-message admission.
+No UI, saved lighting data or physical commissioning defaults were changed.
+
+A real company-key tool/result round trip also verified the exact DeepSeek Flash model
+with maximum reasoning. Nous direct inference ends completed streams at clean EOF rather
+than `[DONE]`; the parser now accepts this only for the verified Nous endpoint after an
+explicit valid finish reason, retaining truncation, cancellation and protocol rejection.
+The company's private Vercel store passed uncached-read and concurrent conditional-write
+checks. These results do not establish deployed relay latency, Slack ingress or physical
+lighting: the connector/plugin remain disabled until their live acceptance, and the
+running provider is not considered switched until Lightesota's own loop succeeds.
+
+## 2026-11-09 — trusted Slack message freshness (source, hosted acceptance pending)
+
+The Giskard plugin now rejects malformed, stale or excessively future trusted Slack message
+timestamps before event receipt claims, authority requests or lighting tools. It requires
+canonical ASCII message `ts` and a finite wall clock, with inclusive limits of 120 seconds old
+and 30 seconds ahead. The timestamp is hashed unchanged; a separate wall-clock dependency
+keeps existing monotonic lease timing intact. Long inference, continuation and restart cannot
+refresh an old message. Fresh authorized state/Stop still work if lease or receipt storage fails.
+
+Deterministic red/green plugin tests close the source-level unseen-old-event hold. Hosted
+message-`ts` metadata, wall-clock accuracy and middleware acceptance remain parent-owned.
+Bridge/server/HA/provider source, lockfiles, tool schemas, durable receipts, Andrew's data and
+physical commissioning gates are unchanged; no live deployment or hardware claim is made.
+
+## 2026-11-09 — final bounded bridge review fixes (source, acceptance pending)
+
+First mailbox initialization now survives a failed startup and process restart using a
+small durable pending/established state in the existing SQLite ledger. Confirmed mailbox
+observation is committed before polling; established or legacy ledgers cannot recreate a
+lost mailbox, even with zero receipts. Unknown or corrupt state remains disabled.
+
+An admitted Stop now survives caller disconnect or a lost admission acknowledgement within
+its unchanged deadline. Success still requires backend acknowledgement. Definite refusals
+before any admission CAS return without a cancellation read or uncertainty delay; attempted
+writes remain outcome unknown across SDK conflict echoes and retries. Ordinary cancellation,
+receipts, Stop fences, credentials and physical output vetoes remain intact.
+
+Focused red/green tests cover these three findings. Parent retains real socket, full-suite,
+private-store and hosted-ingress acceptance. No gateway schema, inference configuration,
+Andrew's data or commissioning setting changed; no publication or live deployment is claimed.
+
+## 2026-11-09 — bridge reliability follow-up (source, acceptance pending)
+
+The outbound connector now recovers automatically after startup failure or a cloud outage,
+using bounded backoff and a fresh fenced session while retaining exclusive SQLite ownership.
+It never resends an uncertain operation, lease or result. Shutdown cancels retries; invalid
+configuration or durable storage failures still require review. Cloud admission hashes now
+expire after 130 seconds instead of exhausting a lifetime 2048/512-entry limit. Permanent
+attempt receipts remain in HA and trusted event receipts remain in the gateway; the
+[bridge notes](../integrations/giskard-relay/README.md#protocol-bounds-and-failure-semantics)
+describe the ingress dependency for requests that never reached HA.
+
+Adapter tests now use the installed Blob 2.9.0 error classes; only a recognized precondition
+conflict permits a CAS retry. Genuine red/green regressions cover recovery, SDK error
+classification and 2,055 completed lease flows with a bounded mailbox. Parent reports the
+five original socket tests passed with hardware veto; private-store, expanded socket,
+deployed ingress and live acceptance remain parent-owned. No physical outputs, inference
+settings, Andrew's data or commissioning gates changed.
+
+## 2026-11-09 — bounded Giskard Vercel ↔ HA bridge (source, acceptance pending)
+
+Added a separate [Node relay package](../integrations/giskard-relay/README.md) and a
+default-disabled outbound connector inside the existing HA Lightesota process. Only
+the four ordinary-light API operations cross the bridge. A private, production-only
+Blob mailbox uses uncached origin reads and ETag CAS, with separate Stop capacity,
+strict Slack admission, fixed deadlines and no automatic mutation retry. The connector
+commits persistent SQLite attempt receipts before loopback dispatch, and the existing
+protected router checks an optional one-use deadline/fence permit immediately before
+effects. Stop fences older queued leases and results; success requires backend acknowledgement.
+
+New HA options are `giskard_relay_enabled`, `giskard_relay_origin` and password field
+`giskard_connector_token`. Absent options remain disabled. Three distinct credentials
+separate Giskard, relay and backend access. No generic tunnel, admin proxy, UI, scheduler,
+extra model tools, inference changes or lighting sender were added. Andrew's features,
+attribution, saved data, existing leases/generations, authentication and hazard gates remain.
+
+Offline regressions exercise real relay/connector/router behavior over Node HTTP streams,
+durable receipts, Stop/deadline races, CAS conflicts and ambiguous commits. Actual loopback
+listening is blocked by this sandbox (`EPERM`); a parent-run socket selector is supplied.
+At initial implementation the pinned Blob SDK could not be installed offline (`ENOTCACHED`);
+parent subsequently installed it for the reliability follow-up above. Adapter tests still
+do not establish Vercel store behavior. Review, commit, publication, production/private-store
+setup, live Slack acceptance and onsite commissioning remain parent-owned. Nothing in this change enables outputs or haze or claims observed light.
+
 ## 2026-11-09 — event branch reconciliation and HA wrapper (source only)
 
 Reconciled main candidate `f9744dc76b893e9a55bcdc12d4e25c6d287955e2` with Andrew's

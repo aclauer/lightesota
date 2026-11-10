@@ -72,6 +72,50 @@ test("SSE supports LF, comments, multiline data and usage after the final reason
   assert.deepEqual(result.toolCalls, []);
 });
 
+const nousBaseUrl = "https://inference-api.nousresearch.com/v1";
+
+test("Nous direct inference accepts a clean EOF after an explicit finish reason and preserves the tool-result round", async () => {
+  const tool = packet({ reasoning_content: "Synthetic private context" })
+    + packet({ tool_calls: [{ index: 0, id: "probe_1", type: "function", function: { name: "connectivity_probe", arguments: '{"marker":"check"}' } }] })
+    + packet({}, "tool_calls")
+    + 'data: {"choices":[],"usage":{"completion_tokens":4}}\n\n';
+  const requests: OpenAIMessage[][] = [];
+  const transport: typeof fetch = async (_url, options) => {
+    requests.push(JSON.parse(String(options!.body)).messages);
+    return response(requests.length === 1 ? tool : packet({ content: "CONNECTIVITY_OK" }, "stop"), 1);
+  };
+  const first = await run(tool, { baseUrl: nousBaseUrl, fetch: transport });
+  assert.deepEqual(first.toolCalls, [{ id: "probe_1", name: "connectivity_probe", input: { marker: "check" } }]);
+  const second = await run("", { baseUrl: nousBaseUrl, fetch: transport,
+    messages: [...defaults.messages, first.message, { role: "tool", tool_call_id: "probe_1", content: '{"ok":true}' }] });
+  assert.equal(second.message.content, "CONNECTIVITY_OK");
+  assert.equal(requests[1][1].reasoning_content, "Synthetic private context");
+});
+
+test("Nous EOF compatibility does not accept an open, failed, incomplete, or refused stream", async () => {
+  const call = packet({ tool_calls: [{ index: 0, id: "probe_2", type: "function", function: { name: "connectivity_probe", arguments: "{}" } }] });
+  const complete = call + packet({}, "tool_calls");
+  for (const invalid of [call, complete + 'data: {"choices":', complete + 'data: {}\n',
+    call + packet({}, "length"), call + packet({}, "content_filter"), call + packet({}, "stop"),
+    complete + packet({ content: "late" })]) {
+    await assert.rejects(run(invalid, { baseUrl: nousBaseUrl }), ProviderError);
+  }
+  await assert.rejects(run("", { baseUrl: nousBaseUrl, timeoutMs: 10, fetch: async () => new Response(new ReadableStream({
+    start(controller) { controller.enqueue(encoder.encode(complete)); },
+  }), { headers: { "content-type": "text/event-stream" } }) }),
+  (error: unknown) => error instanceof ProviderError && error.code === "timeout");
+  let sent = false;
+  await assert.rejects(run("", { baseUrl: nousBaseUrl, fetch: async () => new Response(new ReadableStream({
+    pull(controller) { if (!sent) { sent = true; controller.enqueue(encoder.encode(complete)); } else controller.error(new Error("private network error")); },
+  }), { headers: { "content-type": "text/event-stream" } }) }),
+  (error: unknown) => error instanceof ProviderError && error.code === "protocol" && !error.message.includes("private"));
+});
+
+test("finish-only EOF is restricted to the exact verified Nous endpoint; other brokers still require DONE", async () => {
+  for (const baseUrl of ["https://broker.example/v1", "https://inference-api.nousresearch.com/v2", "https://inference-api.nousresearch.com.evil/v1"])
+    await assert.rejects(run(packet({ content: "not yet complete" }, "stop"), { baseUrl }), ProviderError);
+});
+
 test("a token-budgeted fragmented completion can exceed 4 MiB without exposing thinking or completing before DONE", async () => {
   const tokenCount = 12000;
   const event = (delta: unknown, finish_reason: string | null = null) =>

@@ -19,6 +19,9 @@ const newOptions = {
   giskard_team_id: ["LIGHTESOTA_GISKARD_TEAM_ID", "", "str?"],
   giskard_channel_id: ["LIGHTESOTA_GISKARD_CHANNEL_ID", "", "str?"],
   giskard_user_ids: ["LIGHTESOTA_GISKARD_USER_IDS", "", "str?"],
+  giskard_relay_enabled: ["LIGHTESOTA_GISKARD_RELAY_ENABLED", false, "bool"],
+  giskard_relay_origin: ["LIGHTESOTA_GISKARD_RELAY_ORIGIN", "", "str?"],
+  giskard_connector_token: ["LIGHTESOTA_GISKARD_CONNECTOR_TOKEN", "", "password?"],
 };
 const envNames = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "LIGHTESOTA_ADMIN_TOKEN",
   "LIGHTESOTA_DATA", "LIGHTESOTA_LOCALHOST_ADMIN", ...Object.values(newOptions).map(([env]) => env)];
@@ -92,6 +95,7 @@ test("old HA options preserve Anthropic and saved data, with new gates closed", 
   const result = run(t, { anthropic_api_key: "existing-anthropic", admin_token: "existing-admin", localhost_admin: false }, {
     LIGHTESOTA_GISKARD_ENABLED: "1", LIGHTESOTA_OUTPUT_COMMISSIONED: "1", LIGHTESOTA_HAZE_COMMISSIONED: "1",
     LIGHTESOTA_GISKARD_TOKEN: "stale-inherited-secret", LIGHTESOTA_HERMES_PROXY_KEY: "stale-proxy-secret",
+    LIGHTESOTA_GISKARD_RELAY_ENABLED: "1", LIGHTESOTA_GISKARD_CONNECTOR_TOKEN: "stale-connector-secret",
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.capture.ANTHROPIC_API_KEY, "existing-anthropic");
@@ -112,6 +116,7 @@ test("HA options reach the process literally, including secret metacharacters", 
     preview: true, output_commissioned: true, haze_commissioned: true, giskard_enabled: true,
     giskard_token: secret, giskard_team_id: "TTEST123", giskard_channel_id: "CTEST123",
     giskard_user_ids: "UTEST123,WTEST456", NODE_OPTIONS: "--invalid-option-must-be-ignored",
+    giskard_relay_enabled: true, giskard_relay_origin: "https://relay.example.test", giskard_connector_token: secret,
   };
   const result = run(t, options);
   assert.equal(result.status, 0, result.stderr);
@@ -130,6 +135,16 @@ test("outside HA, existing environment remains unchanged", (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(result.capture, { ...inherited, LIGHTESOTA_DATA: result.dataDir });
   assert.equal(result.stdout + result.stderr, "");
+});
+
+test("invalid optional connector fields disable only the connector without logging values", (t) => {
+  for (const options of [{ giskard_relay_enabled: "true" }, { giskard_relay_enabled: true, giskard_connector_token: { secret: "never-log-this" } }]) {
+    const result = run(t, options);
+    assert.equal(result.status, 0);
+    assert.equal(result.capture.LIGHTESOTA_GISKARD_RELAY_ENABLED, "0");
+    assert.equal(result.capture.LIGHTESOTA_GISKARD_CONNECTOR_TOKEN, "");
+    assert.doesNotMatch(result.stdout + result.stderr, /never-log-this|SyntaxError|\bat /);
+  }
 });
 
 test("blank legacy HA secrets retain existing Anthropic environment", (t) => {

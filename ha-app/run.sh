@@ -58,6 +58,19 @@ try {
       ["giskard_channel_id", "LIGHTESOTA_GISKARD_CHANNEL_ID"],
       ["giskard_user_ids", "LIGHTESOTA_GISKARD_USER_IDS"],
     ]) process.env[env] = string(name, fallback);
+
+    // Optional connector configuration fails closed without taking down the lighting console.
+    // Old HA option files always override an inherited enabled flag to disabled.
+    try {
+      process.env.LIGHTESOTA_GISKARD_RELAY_ENABLED = boolean("giskard_relay_enabled");
+      process.env.LIGHTESOTA_GISKARD_RELAY_ORIGIN = string("giskard_relay_origin");
+      process.env.LIGHTESOTA_GISKARD_CONNECTOR_TOKEN = string("giskard_connector_token");
+    } catch {
+      process.env.LIGHTESOTA_GISKARD_RELAY_ENABLED = "0";
+      process.env.LIGHTESOTA_GISKARD_RELAY_ORIGIN = "";
+      process.env.LIGHTESOTA_GISKARD_CONNECTOR_TOKEN = "";
+      console.error("Giskard connector options invalid; connector disabled.");
+    }
   }
 } catch {
   // JSON parse errors can contain raw input. Never print them or option values.

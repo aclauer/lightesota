@@ -2,6 +2,15 @@
 
 This is an opt-in, authenticated gateway API over Lightesota's existing `ShowController`. It creates no output sender and calls neither Home Assistant nor a Hue bridge directly. It controls ordinary lights only. The matching [native Hermes plugin](../integrations/giskard/README.md) ships in this repository.
 
+For company-cloud access to the HA-hosted app, the optional
+[Vercel ↔ HA mailbox connector](../integrations/giskard-relay/README.md) forwards only
+these four operations through outbound HA HTTPS and fixed numeric loopback dispatch.
+It uses three distinct credentials and adds no model tools or commissioning authority.
+Source support is present; live deployment/acceptance is pending with the parent.
+Its optional `X-Lightesota-Relay-Dispatch` header can only tighten this API: a missing,
+expired or consumed connector permit rejects the effect at the router. Direct requests
+without that header retain the contract below. Raw path aliases and queries are rejected.
+
 **Keep this integration disabled until the independent HA/Lightesota DMX senders have been reduced to the verified single-sender arrangement.** Publishing these routes alone must not activate Slack control. No live Slack delivery, company credentials, physical output, or cutover has been verified by this implementation.
 
 ## Operator configuration
@@ -31,9 +40,13 @@ Only use HTTPS or a private, access-protected tunnel. The API accepts a TLS sock
 3. Expose only sanitized state and the command schema below to the model. Resolve fixture choices against the returned enabled fixtures.
 4. The gateway attaches the captured identity and lease to at most one typed apply. The model never supplies identity, lease, headers, endpoint, arbitrary URL, JavaScript, or credentials.
 5. On `invalid_lease`, end that turn's ability to write. A genuinely new user turn must capture fresh authority before inference. Never fabricate a new turn ID to retry an old action.
+
+The shipped plugin validates the original trusted `HERMES_SESSION_MESSAGE_ID` **before hashing**: exactly ten ASCII decimal seconds digits, `.` and six fractional digits from the message's Slack `ts`, never `thread_ts`. Exact integer microsecond parsing enforces an inclusive age of at most 120 seconds and future skew of at most 30 seconds against finite wall time. Non-string/malformed IDs and non-finite clocks fail closed. The token is not normalized. `wall_clock=time.time` is separately injectable from the existing monotonic lease clock.
+
+`identity()` rechecks freshness before the pre-inference receipt/network request and before each lighting tool invocation. A long inference, continuation, new runtime turn/session or restart cannot refresh the original timestamp; the user must ask again in a new Slack message. Durable event receipts and runtime correlation still prevent repeated authority within the freshness window. This closes the source-level unseen-old-message gap without changing any backend endpoint or model schema. Parent must still verify hosted message-`ts` metadata, clock accuracy and both middleware hooks; local adapter inspection and offline tests are not hosted acceptance.
 6. Readback describes requested Lightesota state. Tell the user when preview, master zero, stopped mode, blackout, release or commissioning prevents an emitting result. Never claim observed light output.
 
-Stop needs no lease and should remain available independently of inference. A genuine new turn can resume ordinary lights after Stop; an old turn cannot.
+Stop needs no lease and should remain available independently of inference. In the shipped Slack plugin, state/Stop still require a fresh authorized message, even when lease acquisition or receipt storage fails. A genuine new message can resume ordinary lights after Stop; an old turn cannot.
 
 ## HTTP contract
 

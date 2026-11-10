@@ -5,6 +5,7 @@ import type { ShowController } from "../show.js";
 import { OUTPUT_COMMISSIONED, PREVIEW } from "../output/policy.js";
 import { isLoopback } from "./auth.js";
 import { finite, idValue, object, validateOverride } from "./validate.js";
+import { relayGate, type RelayGate } from "../integrations/giskard-relay.js";
 
 const BODY_LIMIT = 8192;
 const LEASE_MS = 120_000;
@@ -29,6 +30,7 @@ export interface GiskardOptions {
   policy?: { preview: boolean; commissioned: boolean };
   audit?: (event: Audit) => void;
   maxLeases?: number;
+  relayGate?: RelayGate;
 }
 class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
@@ -59,6 +61,14 @@ export function createGiskardApi(ctx: Context, options: GiskardOptions = {}) {
   const now = options.now ?? Date.now;
   const audit = options.audit ?? ((event: Audit) => console.info(JSON.stringify({ integration: "giskard", ...event })));
   const maxLeases = options.maxLeases ?? 10_000;
+  function relayEffect(action: Action, req: Request) {
+    const permit = req.headers["x-lightesota-relay-dispatch"];
+    if (permit === undefined) return; // Existing direct callers retain exactly their authority.
+    try {
+      if (typeof permit !== "string" || !isLoopback(req.socket.remoteAddress) || req.destroyed) throw new Error();
+      (options.relayGate ?? relayGate).consume(permit, action, req.body);
+    } catch { fail(409, "relay_expired", "Connector dispatch is expired, unknown or already consumed"); }
+  }
   // Never evict tombstones: old trusted turns must not become fresh after expiry, Stop or capacity pressure.
   // Process-local random IDs bind leases to this server boot; restart makes every prior lease unknown.
   const leases = new Map<string, Lease>();
@@ -190,8 +200,9 @@ export function createGiskardApi(ctx: Context, options: GiskardOptions = {}) {
       try { body = exact(req.body, action === "apply" ? ["identity", "leaseId", "command"] : ["identity"], "request"); identity = identify(body.identity); }
       catch (e) { if (e instanceof ApiError) throw e; fail(400, "invalid_request", "Expected a JSON object with a trusted identity"); }
       limit(`${identity!.userId}:${action === "stop" ? "stop" : "ordinary"}`, action === "stop" ? 30 : 60);
-      if (action === "state") return res.json({ ok: true, state: state() });
+      if (action === "state") { relayEffect(action, req); return res.json({ ok: true, state: state() }); }
       if (action === "lease") {
+        relayEffect(action, req);
         const key = actorKey(identity!); let lease = turns.get(key);
         if (lease) lease = usable(lease, identity!);
         else {
@@ -203,6 +214,7 @@ export function createGiskardApi(ctx: Context, options: GiskardOptions = {}) {
         return res.json({ ok: true, leaseId: lease.leaseId, generation: lease.generation, expiresAt: lease.expiresAt, remainingMutations: 1, command: { kind: "lease" }, state: state(), preview: policy.preview, physicalOutput: "unverified" });
       }
       if (action === "stop") {
+        relayEffect(action, req);
         // Strong Stop comes first: even a failing cancellation callback cannot prevent the barrier.
         try { ctx.show.stopLighting(); } finally { ctx.agent.cancelAll(); }
         report(identity!, "stop", [], "ok");
@@ -216,6 +228,7 @@ export function createGiskardApi(ctx: Context, options: GiskardOptions = {}) {
       const lease = usable(leases.get(body!.leaseId as string), identity!);
       // Consume before any effect; errors cannot authorize a duplicate. No await or callback between
       // the final generation assertion and the synchronous ShowController mutation batch.
+      relayEffect(action, req);
       lease.used = true;
       ctx.show.assertGeneration(lease.generation);
       apply();
@@ -233,6 +246,12 @@ export function createGiskardApi(ctx: Context, options: GiskardOptions = {}) {
 export function createGiskardRouter(ctx: Context, options?: GiskardOptions) {
   const router = express.Router(), api = createGiskardApi(ctx, options);
   const json = express.json({ limit: BODY_LIMIT, strict: true, inflate: false });
+  router.use((req, res, next) => {
+    if (req.method !== "POST" || !["state", "lease", "apply", "stop"].some(a => req.originalUrl === `/api/integrations/giskard/${a}`)) {
+      res.status(404).json({ ok: false, code: "not_found", error: "Unknown integration endpoint" }); return;
+    }
+    next();
+  });
   for (const action of ["state", "lease", "apply", "stop"] as const) {
     router.post(`/${action}`, (req, res, next) => {
       if (!api.guard(action, req, res)) return;

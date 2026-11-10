@@ -5,6 +5,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 import os
 import re
 import threading
@@ -97,6 +98,19 @@ def session_value(name, default=""):
     return get_session_env(name, default)
 
 
+def fresh_slack_message(message, now):
+    """Validate trusted Slack event ts, preserving its exact token for the identity hash."""
+    if not isinstance(message, str) or re.fullmatch(r"[0-9]{10}\.[0-9]{6}", message) is None:
+        return False
+    if type(now) not in (int, float) or (type(now) is float and not math.isfinite(now)):
+        return False
+    timestamp_us = int(message[:10]) * 1_000_000 + int(message[11:])
+    # Compare to the exact represented wall time without rounding either boundary.
+    numerator, denominator = now.as_integer_ratio()
+    age = numerator * 1_000_000 - timestamp_us * denominator
+    return -30_000_000 * denominator <= age <= 120_000_000 * denominator
+
+
 def valid_command(command):
     if not isinstance(command, dict):
         return False
@@ -152,8 +166,8 @@ def persistent_receipt(event_id):
 
 class LightingBridge:
     def __init__(self, config, *, session_env=session_value, client=None, clock=time.monotonic,
-                 claim_event=persistent_receipt):
-        self.session_env, self.clock = session_env, clock
+                 wall_clock=time.time, claim_event=persistent_receipt):
+        self.session_env, self.clock, self.wall_clock = session_env, clock, wall_clock
         self.claim_event = claim_event
         self.enabled = config.get("LIGHTESOTA_GISKARD_ENABLED") == "1"
         self.team = config.get("LIGHTESOTA_GISKARD_TEAM_ID", "")
@@ -187,8 +201,9 @@ class LightingBridge:
         session = get("HERMES_SESSION_ID")
         message = get("HERMES_SESSION_MESSAGE_ID")
         turn = metadata.get("turn_id")
-        if (not session or not message or not isinstance(turn, str) or not turn
-                or metadata.get("session_id") != session):
+        if (not session or not isinstance(turn, str) or not turn
+                or metadata.get("session_id") != session
+                or not fresh_slack_message(message, self.wall_clock())):
             return None
         # A Slack message is stable across gateway retries/restarts; Hermes session
         # and turn IDs are not. Runtime correlation is checked separately below.
@@ -231,7 +246,7 @@ class LightingBridge:
         except Exception:
             return denied()
         if identity is None:
-            return denied()
+            return denied("Lighting request requires fresh authorized Slack context. Ask again in a new Slack message.")
         token = self._context.set((identity, (metadata["session_id"], metadata["turn_id"])))
         try:
             return metadata["next_call"](metadata["args"])

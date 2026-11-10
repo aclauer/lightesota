@@ -31,6 +31,14 @@ control.
 
 ## Deployment prerequisites
 
+The purpose-specific [Vercel ↔ HA bridge](../giskard-relay/README.md) is the supported
+source layout for the company-cloud → office-HA connection. Vercel never calls the
+private office IP; a connector inside the HA Lightesota process polls outbound HTTPS.
+For that topology, use its three-credential configuration table: the plugin's token
+authenticates to the relay, while HA uses a different token for the existing backend.
+The shared server/gateway token description below applies to a direct protected route.
+The plugin and its tool authority are unchanged; relay live acceptance remains pending.
+
 Do not enable the plugin or API just because the code has been published.
 
 1. Lightesota must run on the always-on office host. The observed installation is
@@ -119,6 +127,23 @@ new Hermes session/turn still address the same server replay record. The local
 lease is additionally bound to the original Hermes session/turn; another runtime
 turn cannot borrow it. Failed lease requests and uncertain applies are not retried.
 
+Before hashing, `identity()` requires trusted `HERMES_SESSION_MESSAGE_ID` to be the
+original Slack **message `ts`**, not `thread_ts`: exactly ten ASCII seconds digits,
+a dot and six ASCII fractional digits. The plugin parses integer microseconds and
+accepts timestamps at most **120 seconds old** or **30 seconds ahead** of finite wall
+clock time, inclusive. Malformed/non-string values, signs, whitespace, scientific
+notation, Unicode digits and non-finite clocks fail closed. The token is never
+normalized before hashing. The separate injectable `wall_clock=time.time` checks
+message freshness; the existing monotonic clock still governs lease duration.
+
+Both pre-inference authority acquisition and tool middleware recheck freshness through
+`identity()`, before receipt claims or network calls. A long inference/continuation
+can therefore lose eligibility while its monotonic lease is still unexpired. Old
+messages cannot be refreshed by a new runtime turn/session or process restart: ask
+again in a **new Slack message**. Fresh authorized state/Stop remain available when
+lease acquisition or receipt storage fails; stale messages cannot call those tools.
+This is an ingress check; the backend protocol and model arguments are unchanged.
+
 The tool middleware binds trusted context only for the duration of the handler.
 Direct handler calls, DMs, other platforms, cron, missing context and foreign
 actors fail closed, even if Hermes treats a middleware exception as fail-open.
@@ -132,7 +157,7 @@ requesting authority. This SQLite receipt survives gateway/backend restarts and
 stores no prompts, tokens or leases. Keep this database across plugin upgrades
 and profile moves; deleting it removes replay protection. Missing Hermes plugin
 storage support, database I/O failure or the 100,000-receipt cap blocks new apply
-authority without disabling authenticated state/Stop. No receipt is automatically
+authority without disabling state/Stop for fresh authenticated Slack messages. No receipt is automatically
 evicted. Verify the deployed Hermes runtime supports `plugins.plugin_storage`
 and uses persistent profile storage before activation; local-runtime tests do
 not establish compatibility with the hosted Giskard version. Do not replay queued
@@ -150,13 +175,22 @@ LIGHTESOTA_PREVIEW=1 node --import tsx --test server/src/api/giskard.test.ts
 The source has also been exercised through the real Hermes plugin loader,
 request/tool middleware and registry in a throwaway profile, and against the real
 loopback Lightesota preview HTTP server. These checks do **not** prove cloud TLS,
-Nous authorization, live Slack delivery or physical lights.
+Nous authorization, live Slack delivery or physical lights. The freshness change has
+only deterministic offline fixture coverage in this pass; parent must rerun runtime/HTTP
+acceptance with canonical timestamps and an injected wall clock, without patching the
+global clock or changing real profiles.
 
 Before calling the integration live, verify in order:
 
 - A new company gateway conversation exposes exactly the three new lighting tools
   alongside its existing authorized tools, with no general-purpose tool expansion.
-- An allowlisted `#giskard` mention can read sanitized state over the protected
+- Verify the hosted adapter populates trusted `HERMES_SESSION_MESSAGE_ID` from each
+  message event's original `ts`, including replies, rather than `thread_ts`, an edit
+  timestamp or a regenerated ID. Verify finite, accurate host wall time and both
+  middleware hooks. Parent's local adapter inspection is evidence of the expected
+  contract, not hosted verification. An unseen old/malformed/future event must reach
+  neither receipt storage nor network, including after gateway restart.
+- A fresh allowlisted `#giskard` mention can read sanitized state over the protected
   route. DMs, a foreign user/channel and model-supplied identity cannot call it.
 - In an isolated preview, one apply changes only the requested targets; duplicate
   delivery cannot repeat it; Stop invalidates a previously captured turn. Restart

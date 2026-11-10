@@ -98,6 +98,9 @@ function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
 export async function streamChatCompletion(options: StreamChatOptions): Promise<OpenAIResult> {
   if (PREVIEW && !options.fetch) throw new ProviderError("preview", "Agent provider connections are disabled in preview");
   const baseUrl = validateBaseUrl(options.baseUrl);
+  // Verified Nous direct inference closes its HTTP stream after finish_reason,
+  // without [DONE]. Other brokers retain the stricter terminator requirement.
+  const acceptsFinishedEof = baseUrl === "https://inference-api.nousresearch.com/v1";
   const timeoutMs = options.timeoutMs ?? 10 * 60 * 1000;
   if (!Number.isSafeInteger(options.maxTokens) || options.maxTokens < 1
     || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 10 * 60 * 1000
@@ -142,7 +145,7 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
     phase = "stream";
     reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8", { fatal: true });
-    let text = "", reasoning = "", finishReason: string | null = null, finished = false, refused = false;
+    let text = "", reasoning = "", finishReason: string | null = null, finished = false, cleanEof = false, refused = false;
     let lineBuffer = "", dataLines: string[] = [], eventChars = 0, bytes = 0;
     const toolCalls = new Map<number, OpenAIToolCall>();
 
@@ -223,7 +226,7 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
     while (!finished) {
       const next = await abortable(reader.read(), abort.signal);
       checkAbort();
-      if (next.done) { parseLines(decoder.decode(), true); break; }
+      if (next.done) { parseLines(decoder.decode(), true); cleanEof = true; break; }
       bytes += next.value.byteLength;
       if (bytes > MAX_STREAM_BYTES) throw protocolError();
       parseLines(decoder.decode(next.value, { stream: true }));
@@ -231,7 +234,7 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
     checkAbort();
     if (refused || finishReason === "content_filter" || finishReason === "refusal") throw new ProviderError("refused", "The model declined this request. No tool calls were applied.");
     if (finishReason === "length") throw new ProviderError("truncated", "The model response reached its token limit. No tool calls were applied.");
-    if (!finished || (finishReason !== "stop" && finishReason !== "tool_calls") || lineBuffer.trim() || dataLines.length
+    if ((!finished && !(acceptsFinishedEof && cleanEof)) || (finishReason !== "stop" && finishReason !== "tool_calls") || lineBuffer.trim() || dataLines.length
       || (finishReason === "tool_calls") !== (toolCalls.size > 0)) throw protocolError();
 
     const calls = [...toolCalls.entries()].sort(([a], [b]) => a - b);

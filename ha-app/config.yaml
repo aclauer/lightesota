@@ -30,6 +30,9 @@ options:
   giskard_team_id: ""
   giskard_channel_id: ""
   giskard_user_ids: ""
+  giskard_relay_enabled: false
+  giskard_relay_origin: ""
+  giskard_connector_token: ""
 schema:
   anthropic_api_key: password?
   admin_token: password?
@@ -46,3 +49,6 @@ schema:
   giskard_team_id: str?
   giskard_channel_id: str?
   giskard_user_ids: str?
+  giskard_relay_enabled: bool
+  giskard_relay_origin: str?
+  giskard_connector_token: password?
