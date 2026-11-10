@@ -30,6 +30,7 @@ are checked for equality; the owner must also ensure A differs from C.
 | Location | Non-secret configuration name | Value / relationship |
 | --- | --- | --- |
 | Vercel production | `GISKARD_RELAY_ENABLED` | `1` only after staging; unset disables |
+| Vercel production, temporary diagnostics | `GISKARD_RELAY_DIAGNOSTICS` | Exactly `1` enables bounded storage-stage/category logs; unset disables |
 | Vercel production | `GISKARD_RELAY_TOKEN` | Secret A; Giskard → relay |
 | Vercel production | `GISKARD_CONNECTOR_TOKEN` | Secret B; HA → relay |
 | Vercel production | `GISKARD_RELAY_TEAM_ID`, `GISKARD_RELAY_CHANNEL_ID`, `GISKARD_RELAY_USER_IDS` | Exact existing Slack team/channel/users; no wildcard |
@@ -78,6 +79,31 @@ origin reads and conditional writes. Never substitute `head`, cached reads, publ
 or unconditional overwrites. SDK abort/retry behavior and actual origin latency require
 parent acceptance. The app responds within 5.5 seconds; provision enough function runtime
 for response/cancellation cleanup (at least 10 seconds).
+
+For a parent-owned diagnostic deployment, temporarily set `GISKARD_RELAY_DIAGNOSTICS=1`
+in the protected production project configuration and inspect `giskard_relay_storage`
+log records, then unset the flag. This does not enable the relay or bypass authentication.
+Each record contains only fixed `event`, `operation`, `stage` and `code` labels. Reads
+identify `get`, `metadata`, `body` or `parse`; CAS identifies `create` or `update`.
+Codes are `ok`, `missing`, an allowlisted SDK error class, `SyntaxError`,
+`TypeError`, the local `refused_unavailable` / `refused_expired` / `refused_body_too_large`
+codes, or `unclassified`. No error text/stack, URL, credentials, headers, identity,
+request, lease, ETag or mailbox bytes are logged. A successful parse is not mailbox
+schema validation; a successful storage write is not a successful lighting operation.
+
+The shared read/write budget permits at most 12 records per 60-second monotonic window
+per loaded function instance, including successes. Excess records are dropped; there
+is no queue, timer or durable counter. Concurrent requests share that budget, sink
+failures consume it, and logging failures do not change storage return/throw behavior.
+Cold starts reset the budget; this is not a fleet-wide logging cap. No log can also
+mean the budget was exhausted, storage was never reached, SDK import failed, or an
+operation has not settled. The SDK's `get()` collapses non-404 HTTP errors to generic
+`BlobError`; generic PUT errors also cannot be distinguished further without unsafe
+message inspection. The known, non-exported `BlobOidcEnvironmentNotAllowedError` is
+recognized only by an exact constructor-name match on an SDK `BlobError` instance;
+other SDK classes use `instanceof`. This classification is for logs only. Never infer HTTP status, OIDC cause
+or write commitment from a generic category or response duration. API error bodies,
+deadlines, retry/fencing rules and stored receipts are unchanged; do not reset data.
 
 Parent deployment commands, **after review, commit and project/store configuration**.
 Run from the repository root, linked by the parent to the dedicated bridge project whose

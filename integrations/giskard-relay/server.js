@@ -9,7 +9,11 @@ const lazyStore = {
   async cas(etag, value, signal) { return (await load()).cas(etag, value, signal); },
 };
 let loaded;
-function load() { return loaded ??= import('@vercel/blob').then(blobStore); }
+function load() {
+  return loaded ??= import('@vercel/blob').then(sdk => blobStore(sdk, {
+    diagnostics: process.env.GISKARD_RELAY_DIAGNOSTICS === '1',
+  }));
+}
 const server = http.createServer({ maxHeaderSize: 8192 }, handler({ store: lazyStore, env: process.env }));
 server.requestTimeout = 6000;
 server.headersTimeout = 6000;

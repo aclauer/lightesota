@@ -1,13 +1,27 @@
 # Lighting integration changelog
 
-## 2026-11-09 — Nous repeated completion metadata (source, live acceptance pending)
+## 2026-11-09 — live DeepSeek acceptance and temporary relay diagnostics
+
+DeepSeek Flash completed a read-only `get_show_state` tool call and the final assistant
+answer inside the deployed HA Lightesota app at maximum reasoning. The saved conversation
+and provider health both confirm completion; this does not verify physical lighting.
+
+The Vercel connector still returns HTTP 503 before polling. Optional production diagnostics
+now report only fixed storage stage/error labels, capped at 12 records per minute per
+function instance and disabled by default. The 26 relay tests and syntax build pass.
+Credentials, mailbox content, stored receipts, deadlines and safety rules are unchanged.
+These diagnostics identify the next failure boundary; they are not a relay fix or a claim
+that Slack lighting is active. Physical outputs remain disabled during acceptance.
+
+## 2026-11-09 — Nous repeated completion metadata (live read-only acceptance passed)
 
 The exact verified Nous endpoint can now repeat the same stream finish reason with only
 inert metadata: assistant role, empty content and null reasoning. Changed reasons, new
 text/reasoning, tool deltas and unknown delta fields still fail closed; other endpoints
 retain their strict completion behavior. Tools remain unavailable for execution until
 stream termination and complete validation. Offline regression tests reproduce the captured
-empty-argument tool stream; a successful live Lightesota model turn remains parent-owned.
+empty-argument tool stream. The subsequent live HA acceptance completed the read-only tool
+and final answer, as recorded above.
 
 ## 2026-11-09 — relay candidate accepted locally; activation remains separate
 
