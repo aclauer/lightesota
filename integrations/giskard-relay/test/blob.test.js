@@ -69,7 +69,7 @@ test('diagnostics use real class identities and fixed codes, never arbitrary err
 });
 
 test('read diagnostics separate missing, metadata, bounded body, JSON and success without logging bytes', async () => {
-  const reply = raw => ({ statusCode: 200, blob: { etag: 'private-etag' }, stream: new ReadableStream({
+  const reply = (raw, etag = 'private-etag') => ({ statusCode: 200, blob: { etag }, stream: new ReadableStream({
     start(c) { c.enqueue(Buffer.from(raw)); c.close(); },
   }) });
   const cases = [
@@ -86,7 +86,24 @@ test('read diagnostics separate missing, metadata, bounded body, JSON and succes
     if (code === 'ok') assert.deepEqual(await store.read(), { etag: 'private-etag', value: { private: 'mailbox-bytes' } });
     else if (code === 'missing') assert.equal(await store.read(), null);
     else await assert.rejects(store.read());
-    assert.deepEqual(logs, [{ event: 'giskard_relay_storage', operation: 'read', stage, code }]);
+    assert.deepEqual(logs, [
+      ...(['get', 'metadata'].includes(stage) ? [] : [{ event: 'giskard_relay_storage', operation: 'read', stage: 'metadata', code: 'etag_other' }]),
+      { event: 'giskard_relay_storage', operation: 'read', stage, code },
+    ]);
+  }
+  for (const [etag, code] of [['"private-strong"', 'etag_strong_quoted'], ['W/"private-weak"', 'etag_weak'],
+    ['private-unquoted', 'etag_other'], ['w/"private-lowercase"', 'etag_other'], ['"private\ncontrol"', 'etag_other'],
+    ['"private"extra"', 'etag_other'], [{ private: 'not-a-string' }, 'etag_other']]) {
+    const logs = []; let forwarded;
+    const store = blobStore({ ...installedSdk, get: async () => reply('{}', etag), put: async (_path, _raw, options) => { forwarded = options.ifMatch; } },
+      { diagnostics: true, log: line => logs.push(JSON.parse(line)) });
+    const read = await store.read(); await store.cas(read.etag, {});
+    assert.equal(read.etag, etag); assert.equal(forwarded, etag, 'diagnostics never repair or replace the original ETag');
+    assert.deepEqual(logs, [
+      { event: 'giskard_relay_storage', operation: 'read', stage: 'metadata', code },
+      { event: 'giskard_relay_storage', operation: 'read', stage: 'parse', code: 'ok' },
+      { event: 'giskard_relay_storage', operation: 'cas', stage: 'update', code: 'ok' },
+    ]);
   }
 });
 
@@ -132,7 +149,7 @@ test('installed SDK 2.9.0 wire behavior is exercised with network-disabled mocks
       await assert.rejects(store.cas(etag, {}), error => code === 'precondition_failed' ? error instanceof Conflict : error instanceof Refused && error.code === 'outcome_unknown');
       assert.equal(logs.at(-1).code, expected);
     }
-    assert.deepEqual(logs.slice(0, 3).map(({ code }) => code), ['ok', 'BlobError', 'missing']);
+    assert.deepEqual(logs.slice(0, 4).map(({ code }) => code), ['etag_other', 'ok', 'BlobError', 'missing']);
     assert.equal(JSON.stringify(logs).includes('synthetic'), false);
     mock.assertNoPendingInterceptors();
   } finally { setGlobalDispatcher(dispatcher); await mock.close(); }

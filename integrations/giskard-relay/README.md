@@ -91,6 +91,15 @@ codes, or `unclassified`. No error text/stack, URL, credentials, headers, identi
 request, lease, ETag or mailbox bytes are logged. A successful parse is not mailbox
 schema validation; a successful storage write is not a successful lighting operation.
 
+Successful read metadata adds one four-field `read` / `metadata` record with code
+`etag_strong_quoted`, `etag_weak` (canonical `W/` plus a quoted tag), or `etag_other`.
+Only the shape is reported: no raw tag, hash, length or previous-tag tracking. The
+original ETag is returned and used for CAS unchanged, including its quotes or `W/`.
+This is diagnostic classification only; a weak tag does not by itself prove a
+compression issue, and a strong tag does not exclude stale reads or contention.
+The extra record consumes the same budget below (a read/parse/CAS attempt now
+normally consumes three records). There are no additional storage operations.
+
 The shared read/write budget permits at most 12 records per 60-second monotonic window
 per loaded function instance, including successes. Excess records are dropped; there
 is no queue, timer or durable counter. Concurrent requests share that budget, sink

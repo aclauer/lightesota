@@ -21,9 +21,14 @@ function diagnosticCode(sdk, error) {
   if (error instanceof TypeError) return 'TypeError';
   return 'unclassified';
 }
+function etagCode(etag) {
+  if (typeof etag === 'string' && /^"[\x21\x23-\x7e\x80-\xff]*"$/.test(etag)) return 'etag_strong_quoted';
+  if (typeof etag === 'string' && /^W\/"[\x21\x23-\x7e\x80-\xff]*"$/.test(etag)) return 'etag_weak';
+  return 'etag_other';
+}
 function storageDiagnostics(sdk, { diagnostics = false, log = line => console.warn(line), now = () => performance.now() } = {}) {
   let windowStart, count = 0;
-  return (operation, stage, code, error) => {
+  return (operation, stage, code, detail) => {
     if (diagnostics !== true) return;
     try {
       const at = now();
@@ -32,7 +37,7 @@ function storageDiagnostics(sdk, { diagnostics = false, log = line => console.wa
       if (count >= 12) return;
       count++; // Reserve synchronously before the sink: concurrent calls share one budget.
       log(JSON.stringify({ event: 'giskard_relay_storage', operation, stage,
-        code: code === 'error' ? diagnosticCode(sdk, error) : code }));
+        code: code === 'error' ? diagnosticCode(sdk, detail) : code === 'etag_shape' ? etagCode(detail) : code }));
     } catch { /* Diagnostics must never replace a storage result or exception. */ }
   };
 }
@@ -48,6 +53,7 @@ export function blobStore(sdk, options) {
         if (result === null) { report('read', stage, 'missing'); return null; }
         stage = 'metadata';
         if (result.statusCode !== 200 || !result.blob?.etag) throw new Refused();
+        report('read', stage, 'etag_shape', result.blob.etag);
         stage = 'body';
         const raw = await bounded(result.stream, MAILBOX_LIMIT, signal);
         stage = 'parse';
