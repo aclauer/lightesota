@@ -1,17 +1,19 @@
 # Lighting integration changelog
 
-## 2026-11-09 — live DeepSeek acceptance and temporary relay diagnostics
+## 2026-11-09 — live DeepSeek acceptance and relay representation fix pending cloud acceptance
 
 DeepSeek Flash completed a read-only `get_show_state` tool call and the final assistant
 answer inside the deployed HA Lightesota app at maximum reasoning. The saved conversation
 and provider health both confirm completion; this does not verify physical lighting.
 
-The Vercel connector still returns HTTP 503 before polling. Optional production diagnostics
-now report only fixed storage stage/error labels, capped at 12 records per minute per
-function instance and disabled by default. The 26 relay tests and syntax build pass.
-Credentials, mailbox content, stored receipts, deadlines and safety rules are unchanged.
-These diagnostics identify the next failure boundary; they are not a relay fix or a claim
-that Slack lighting is active. Physical outputs remain disabled during acceptance.
+Parent's cloud probe reproduced conditional-write rejection after compressed larger JSON
+reads returned weak ETags; identity reads returned the same content with strong tags
+matching creation PUTs. The relay now requests `accept-encoding: identity` through SDK
+2.9.0's supported GET headers option and forwards the same read's raw ETag unchanged to
+CAS. Offline regressions cover compressed rejection and identity-read CAS. Optional
+diagnostics retain their existing limits. Identity-read cloud GREEN and SFO1 relay
+acceptance remain pending; Slack lighting is not yet verified. Credentials, receipts,
+deadlines and safety rules are unchanged. Physical outputs remain disabled.
 
 ## 2026-11-09 — Nous repeated completion metadata (live read-only acceptance passed)
 

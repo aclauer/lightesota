@@ -80,6 +80,12 @@ or unconditional overwrites. SDK abort/retry behavior and actual origin latency 
 parent acceptance. The app responds within 5.5 seconds; provision enough function runtime
 for response/cancellation cleanup (at least 10 seconds).
 
+Private uncached GETs request `accept-encoding: identity` through SDK 2.9.0's supported
+`headers` option. CAS still forwards the unchanged ETag from that same body read.
+Parent's cloud probe reproduced compressed weak-tag CAS rejection for both larger JSON
+cases; identity reads returned the same content with strong tags matching creation PUTs.
+The identity-read cloud CAS probe and SFO1 live relay acceptance remain pending.
+
 For a parent-owned diagnostic deployment, temporarily set `GISKARD_RELAY_DIAGNOSTICS=1`
 in the protected production project configuration and inspect `giskard_relay_storage`
 log records, then unset the flag. This does not enable the relay or bypass authentication.

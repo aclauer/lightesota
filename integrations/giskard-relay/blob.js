@@ -49,7 +49,8 @@ export function blobStore(sdk, options) {
     async read(signal) {
       let stage = 'get';
       try {
-        const result = await sdk.get(MAILBOX_PATH, { access: 'private', useCache: false, abortSignal: signal });
+        const result = await sdk.get(MAILBOX_PATH, { access: 'private', useCache: false, abortSignal: signal,
+          headers: { 'accept-encoding': 'identity' } });
         if (result === null) { report('read', stage, 'missing'); return null; }
         stage = 'metadata';
         if (result.statusCode !== 200 || !result.blob?.etag) throw new Refused();

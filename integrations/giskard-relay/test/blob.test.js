@@ -4,6 +4,7 @@ import { blobStore, Conflict, MAILBOX_PATH } from '../blob.js';
 import { MAILBOX_LIMIT, Refused } from '../protocol.js';
 import { bounded } from '../protocol.js';
 import { PassThrough } from 'node:stream';
+import { gzipSync } from 'node:zlib';
 import { BlobError, BlobPreconditionFailedError } from '@vercel/blob';
 import * as installedSdk from '@vercel/blob';
 import { MockAgent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
@@ -151,6 +152,37 @@ test('installed SDK 2.9.0 wire behavior is exercised with network-disabled mocks
     }
     assert.deepEqual(logs.slice(0, 4).map(({ code }) => code), ['etag_other', 'ok', 'BlobError', 'missing']);
     assert.equal(JSON.stringify(logs).includes('synthetic'), false);
+
+    // Model the cloud reproduction at the HTTP boundary: compression changes the
+    // representation validator, while conditional writes require the original tag.
+    const value = { padding: 'x'.repeat(16384) }, raw = JSON.stringify(value);
+    const strong = '"synthetic-original"', weak = 'W/"synthetic-compressed"';
+    const encodings = [], forwarded = [], signal = new AbortController().signal;
+    origin.intercept(read).reply(({ headers }) => {
+      const encoding = new Headers(headers).get('accept-encoding');
+      encodings.push(encoding);
+      return { statusCode: 200, data: encoding === 'identity' ? raw : gzipSync(raw),
+        responseOptions: { headers: encoding === 'identity' ? { etag: strong }
+          : { etag: weak, 'content-encoding': 'gzip' } } };
+    }).times(2);
+    mock.get('https://vercel.com').intercept({ method: 'PUT', path: `/api/blob/?${new URLSearchParams({ pathname: MAILBOX_PATH })}`,
+      headers: { 'x-vercel-blob-access': 'private', 'x-add-random-suffix': '0', 'x-allow-overwrite': '1',
+        authorization: 'Bearer synthetic-oidc-token', 'x-vercel-blob-store-id': 'fixture' },
+    }).reply(({ headers }) => {
+      const etag = new Headers(headers).get('x-if-match'); forwarded.push(etag);
+      return etag === strong ? { statusCode: 200, data: { etag: '"synthetic-updated"' } }
+        : { statusCode: 412, data: { error: { code: 'precondition_failed' } } };
+    }).times(2);
+    const compressed = await installedSdk.get(MAILBOX_PATH, { ...auth, access: 'private', useCache: false, abortSignal: signal });
+    assert.equal(compressed.blob.etag, weak);
+    assert.equal(compressed.headers.get('content-encoding'), 'gzip');
+    assert.equal((await bounded(compressed.stream, MAILBOX_LIMIT, signal)).toString('utf8'), raw);
+    await assert.rejects(store.cas(compressed.blob.etag, value, signal), Conflict);
+    const original = await store.read(signal);
+    await store.cas(original.etag, original.value, signal);
+    assert.deepEqual(original, { etag: strong, value });
+    assert.notEqual(encodings[0], 'identity'); assert.equal(encodings[1], 'identity');
+    assert.deepEqual(forwarded, [weak, strong], 'CAS forwards the exact tag from each body read, without repair');
     mock.assertNoPendingInterceptors();
   } finally { setGlobalDispatcher(dispatcher); await mock.close(); }
 });
@@ -175,7 +207,7 @@ test('SDK boundary pins private uncached origin reads, bounded stream and exact 
   const sdk = { async get(...args) { calls.push(args); return { statusCode: 200, blob: { etag: 'old' }, stream: new ReadableStream({ start(c) { c.enqueue(Buffer.from('{"version":1}')); c.close(); } }) }; },
     async put(...args) { calls.push(args); } };
   const store = blobStore(sdk); assert.deepEqual(await store.read(signal), { etag: 'old', value: { version: 1 } });
-  assert.deepEqual(calls[0], [MAILBOX_PATH, { access: 'private', useCache: false, abortSignal: signal }]);
+  assert.deepEqual(calls[0], [MAILBOX_PATH, { access: 'private', useCache: false, abortSignal: signal, headers: { 'accept-encoding': 'identity' } }]);
   await store.cas('old', { version: 1 }, signal);
   assert.deepEqual(calls[1], [MAILBOX_PATH, '{"version":1}', { access: 'private', addRandomSuffix: false, allowOverwrite: true, ifMatch: 'old', contentType: 'application/json', abortSignal: signal }]);
   await store.cas(null, {}, signal); assert.equal(calls[2][2].allowOverwrite, false); assert.ok(!Object.hasOwn(calls[2][2], 'ifMatch'));
