@@ -13,6 +13,7 @@ import { Library } from "../library.js";
 import { ShowController } from "../show.js";
 import { createGiskardApi, createGiskardRouter, type GiskardOptions } from "./giskard.js";
 import { Auth } from "./auth.js";
+import { AgentService } from "../agent/agent.js";
 
 const token = "giskard-isolated-test-token-1234567890";
 const identity = { teamId: "TTEST123", channelId: "C0CB4RFQ55Y", userId: "UTEST123", turnId: "event-123" };
@@ -21,15 +22,17 @@ const env = {
   LIGHTESOTA_GISKARD_TEAM_ID: identity.teamId, LIGHTESOTA_GISKARD_CHANNEL_ID: identity.channelId,
   LIGHTESOTA_GISKARD_USER_IDS: identity.userId + ",WTEST456",
 };
-function harness(t: TestContext, options: GiskardOptions = {}) {
+function harness(t: TestContext, options: GiskardOptions = {}, inference?: typeof fetch) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lightesota-giskard-"));
   config.dataDir = dir;
   const library = new Library(), rig = defaultRig(), settings = defaultSettings();
+  fs.mkdirSync(path.join(dir, "patterns")); fs.mkdirSync(path.join(dir, "agent"));
   rig.fixtures.push({ id: "hue-test", profileId: "hue-color-light", name: "Virtual Hue", enabled: true, tags: ["right"], x: 1, y: 1, rotation: 0, hueLightId: "test-only" });
   const show = new ShowController(library, () => rig, () => settings);
   show.engine.setRig(rig);
   let cancelled = 0, now = 100_000;
-  const ctx = { show, rigFile: { get: () => rig }, agent: { cancelAll: () => { cancelled++; } } };
+  const agent = inference ? new AgentService({ library, show, getRig: () => rig, getSettings: () => settings, onPatternSaved: (id, live) => { if (live !== false) show.patternUpdated(id); } }, () => {}, { hermes: { fetch: inference }, now: options.monotonicNow }) : { cancelAll: () => { cancelled++; } };
+  const ctx = { show, rigFile: { get: () => rig }, agent };
   const audit: unknown[] = [];
   const makeApi = (extra: GiskardOptions = {}) => createGiskardApi(ctx, { env, now: () => now, policy: { preview: true, commissioned: false }, audit: (event) => audit.push(event), ...options, ...extra });
   const api = makeApi();
@@ -42,8 +45,103 @@ function harness(t: TestContext, options: GiskardOptions = {}) {
   const lease = (who = identity) => { const r = call("lease", { identity: who }); assert.equal(r.code, 200, JSON.stringify(r.body)); return r.body.leaseId as string; };
   const apply = (command: unknown, who = identity, leaseId = lease(who)) => call("apply", { identity: who, leaseId, command });
   t.after(() => { show.stop(); library.flush(); fs.rmSync(dir, { recursive: true, force: true }); });
-  return { ctx, show, rig, settings, api, makeApi, call, lease, apply, audit, advance: (ms: number) => { now += ms; }, cancelled: () => cancelled };
+  return { ctx, library, dir, show, rig, settings, api, makeApi, call, lease, apply, audit, advance: (ms: number) => { now += ms; }, cancelled: () => cancelled };
 }
+
+const agentReply = (name?: string, input?: unknown) => new globalThis.Response([
+  `data: ${JSON.stringify({ choices: [{ index: 0, delta: name ? { tool_calls: [{ index: 0, id: "call_one", type: "function", function: { name, arguments: JSON.stringify(input) } }] } : { content: "The pattern is applied; physical output is unverified." }, finish_reason: null }] })}\n\n`,
+  `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: name ? "tool_calls" : "stop" }] })}\n\n`, "data: [DONE]\n\n",
+].join(""), { headers: { "content-type": "text/event-stream" } });
+
+test("natural request accepts promptly, runs the real agent and reports an owned completed pattern", async t => {
+  let finish!: (value: globalThis.Response) => void, round = 0;
+  const h = harness(t, {}, async (_url, init) => {
+    round++;
+    const request = JSON.parse(String(init?.body));
+    if (round === 1) {
+      assert.ok(request.tools.some((t: any) => t.function.name === "set_lasers"));
+      assert.ok(!request.tools.some((t: any) => ["set_haze", "arm_lasers", "save_scene"].includes(t.function.name)));
+      return new Promise(resolve => { finish = resolve; });
+    }
+    if (round === 2) {
+      const saved = JSON.parse(request.messages.findLast((m: any) => m.role === "tool").content);
+      return agentReply("apply_pattern", { id: saved.id, params: null, crossfadeMs: 0 });
+    }
+    return agentReply();
+  });
+  h.show.quickLook("calm-blue", ["w1"]); // Applying a whole-rig pattern must release manual wash ownership.
+  h.rig.fixtures.find(f => f.id === "hue-test")!.profileId = "hue-gradient-strip";
+  h.show.engine.setRig(h.rig);
+  h.show.setOverride("hue-test", { dim: 0.2 });
+  h.show.setSolo(["w1"]); h.show.setMaster(0.4);
+  const source = 'export default { name: "Owned original", render(ctx) { ctx.fill("#123456"); } };';
+  const original = h.library.savePattern({ source });
+  const accepted = h.apply({ kind: "agent_request", prompt: "Make the lights shift from left to right" });
+  assert.equal(accepted.code, 202, JSON.stringify(accepted.body));
+  assert.equal(accepted.body.request.status, "accepted");
+  assert.equal(accepted.body.physicalOutput, "unverified");
+  await new Promise(resolve => setImmediate(resolve));
+  const requestId = accepted.body.request.id;
+  assert.equal(h.call("state", { identity, requestId }).body.request.status, "running");
+  finish(agentReply("write_pattern", { id: original.id, source: 'export default { name: "Left to right", render(ctx) { for (const f of ctx.fixtures) ctx.set(f, [0, 0.7, 1], {dim: 0.15 + 0.15 * Math.cos(f.x - ctx.t)}); } };' }));
+  for (let n = 0; n < 20 && h.call("state", { identity, requestId }).body.request.status === "running"; n++) await new Promise(resolve => setImmediate(resolve));
+  const completed = h.call("state", { identity, requestId });
+  assert.equal(completed.body.request.status, "completed");
+  assert.equal(h.library.getPattern(original.id)?.source, source);
+  assert.notEqual(h.show.state.patternId, original.id);
+  assert.ok(h.library.getPattern(h.show.state.patternId!));
+  assert.equal(h.show.state.washes.w1.owner, "pattern");
+  assert.equal(h.show.state.overrides["hue-test"], undefined);
+  assert.deepEqual(h.show.state.solo, []);
+  assert.equal(h.show.state.master, 0.4);
+  assert.equal(h.show.state.stopped, false);
+  assert.equal(h.show.state.lasers.armed, false);
+  assert.equal(h.call("state", { identity: { ...identity, userId: "WTEST456" }, requestId }).body.request.status, "unknown");
+});
+
+test("natural requests retain original lease deadline, one attempt and cancellation across late inference", async t => {
+  for (const mode of ["stop", "takeover", "timeout", "cancel"] as const) await t.test(mode, async t => {
+    let now = 1000, finish!: (value: globalThis.Response) => void;
+    const h = harness(t, { monotonicNow: () => now }, async () => new Promise(resolve => { finish = resolve; }));
+    const leaseId = h.lease(); now += 119000;
+    const command = { kind: "agent_request", prompt: "Start a new look" };
+    const accepted = h.call("apply", { identity, leaseId, command });
+    assert.equal(accepted.code, 202);
+    assert.ok(accepted.body.request.remainingMs <= 1000, "pre-Giskard inference time is not renewed at enqueue");
+    assert.equal(h.call("apply", { identity, leaseId, command }).code, 409);
+    await new Promise(resolve => setImmediate(resolve));
+    // A separate request cannot overlap even before the first request changes any output.
+    const competing = { ...identity, turnId: "competing" };
+    assert.notEqual(h.apply(command, competing).code, 202);
+    if (mode === "stop") h.call("stop");
+    if (mode === "takeover") h.show.setMaster(0.17);
+    if (mode === "timeout") now += 1001;
+    if (mode === "cancel") h.ctx.agent.cancelAll();
+    h.call("state", { identity, requestId: accepted.body.request.id });
+    const before = structuredClone(h.show.state);
+    finish(agentReply("write_pattern", { id: null, source: 'export default { name: "Too late", render(ctx) { ctx.fill("#fff"); } };' }));
+    for (let n = 0; n < 6; n++) await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(h.show.state, before);
+    assert.equal(h.library.listPatterns().length, 0, "no delayed filesystem write either");
+    const status = h.call("state", { identity, requestId: accepted.body.request.id }).body.request.status;
+    assert.equal(status, mode === "timeout" ? "expired" : mode === "takeover" ? "failed" : "cancelled");
+    const rebooted = h.makeApi();
+    assert.equal(h.call("apply", { identity, leaseId, command }, `Bearer ${token}`, rebooted).code, 409);
+    let resumed = 0;
+    const restartedAgent = new AgentService({ library: h.library, show: h.show, getRig: () => h.rig, getSettings: () => h.settings, onPatternSaved() {} }, () => {}, { hermes: { fetch: async () => { resumed++; return agentReply(); } } });
+    assert.equal(restartedAgent.lightingRequestStatus("unknown", accepted.body.request.id).status, "unknown");
+    assert.equal(resumed, 0, "persisted conversations do not auto-resume jobs");
+  });
+});
+
+test("natural prompt and status schemas reject extra authority, missing context and oversized input", t => {
+  const h = harness(t);
+  for (const command of [{ kind: "agent_request", prompt: "" }, { kind: "agent_request", prompt: "x".repeat(4097) }, { kind: "agent_request", prompt: "hello", role: "admin" }]) {
+    assert.equal(h.call("apply", { identity, leaseId: "x".repeat(43), command }).code, 400);
+  }
+  for (const body of [{ requestId: "r".repeat(24) }, { identity, requestId: "../conversation" }, { identity, conversationId: "private" }]) assert.equal(h.call("state", body).code, 400);
+  assert.equal(h.call("state", { identity: { ...identity, channelId: "COTHER" } }).code, 403);
+});
 
 /** Real Express parsing over in-memory streams. No listener, network, worker, index.ts or output driver. */
 async function inMemoryHttp(app: express.Express, raw: string, url = "/api/integrations/giskard/state", headers: Record<string, string> = {}, beforeBody?: (req: IncomingMessage, res: ServerResponse) => void) {

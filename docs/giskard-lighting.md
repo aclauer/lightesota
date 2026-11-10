@@ -1,17 +1,18 @@
 # Giskard lighting API
 
-This is an opt-in, authenticated gateway API over Lightesota's existing `ShowController`. It creates no output sender and calls neither Home Assistant nor a Hue bridge directly. It controls ordinary lights only. The matching [native Hermes plugin](../integrations/giskard/README.md) ships in this repository.
+This is an opt-in, authenticated gateway API over Lightesota's existing `ShowController` and lighting `AgentService`. It creates no output sender and calls neither Home Assistant nor a Hue bridge directly. Typed fixture commands control ordinary lights; natural requests can also use the agent's existing manually armed, typed laser controls. Haze is excluded. The matching [native Hermes plugin](../integrations/giskard/README.md) ships in this repository.
 
 For company-cloud access to the HA-hosted app, the optional
 [Vercel ↔ HA mailbox connector](../integrations/giskard-relay/README.md) forwards only
 these four operations through outbound HA HTTPS and fixed numeric loopback dispatch.
-It uses three distinct credentials and adds no model tools or commissioning authority.
-Source support is present; live deployment/acceptance is pending with the parent.
+It uses three distinct credentials and grants no commissioning authority. Existing
+state/Stop live evidence is recorded in the changelog; natural-language rollout and
+physical acceptance remain parent-owned.
 Its optional `X-Lightesota-Relay-Dispatch` header can only tighten this API: a missing,
 expired or consumed connector permit rejects the effect at the router. Direct requests
 without that header retain the contract below. Raw path aliases and queries are rejected.
 
-**Keep this integration disabled until the independent HA/Lightesota DMX senders have been reduced to the verified single-sender arrangement.** Publishing these routes alone must not activate Slack control. No live Slack delivery, company credentials, physical output, or cutover has been verified by this implementation.
+**Keep physical output disabled until the independent HA/Lightesota DMX senders have been reduced to the verified single-sender arrangement.** Parent-recorded software acceptance is in the changelog. This natural-language patch does not establish deployment or physical readiness.
 
 ## Operator configuration
 
@@ -25,6 +26,7 @@ The server reads these environment variables when constructing the API. They are
 | `LIGHTESOTA_GISKARD_CHANNEL_ID` | Exact Slack channel ID. Current requested channel is `C0CB4RFQ55Y` (`#giskard`). |
 | `LIGHTESOTA_GISKARD_USER_IDS` | Comma-separated explicit Slack `U`/`W` IDs (maximum 100 entries). No wildcard, empty entry, display name, or inferred membership. The operator supplies the actual authorized users. |
 | `LIGHTESOTA_OUTPUT_COMMISSIONED` | Exactly `1` is required for normal applies outside preview. Operator-owned commissioning follows the existing migration runbook. |
+| `LIGHTESOTA_HAZE_COMMISSIONED` | Keep `0`. Natural requests fail closed if haze was commissioned at process start; existing output packing vetoes haze while it is disabled. |
 | `LIGHTESOTA_PREVIEW` | Existing `1` allows virtual-state QA, while permanently blocking physical output **and provider requests**. No API request changes this gate. |
 
 An enabled but incomplete/invalid configuration fails closed with `503 not_configured`. A disabled integration returns `404 disabled`, including for Stop. With valid enabled configuration, authenticated state/lease/Stop remain available while commissioning blocks apply.
@@ -62,9 +64,9 @@ Those are schema examples, not a configured team or user. All four fields are re
 
 ### POST `/api/integrations/giskard/state`
 
-Body: `{"identity":{...}}`
+Body: `{"identity":{...},"requestId":"<optional 24-character request ID>"}`
 
-Response: `{"ok":true,"state":{...}}`. Reading state never creates, renews or consumes a lease.
+Response: `{"ok":true,"state":{...},"request":{...}}`. Reading state never creates, renews or consumes a lease. Request status is visible only to its exact Slack team/channel/actor; without an ID the latest owned request is returned. Missing, foreign, restarted or expired-retention IDs return `{"status":"unknown"}`, never another actor's conversation. This is not a conversation/history API.
 
 Every returned `state` has these fields:
 
@@ -109,7 +111,7 @@ The boot-local ledger retains all turn records, including consumed/expired tombs
 
 Body: `{"identity":{...},"leaseId":"...","command":{...}}`
 
-Exactly one of the following command objects is allowed, targeting 1–128 unique enabled IDs:
+Exactly one command object is allowed. The three typed fixture commands target 1–128 unique enabled IDs:
 
 ```json
 {"kind":"set_lights","fixtureIds":["w1","w2"],"brightness":30,"color":"#ff8800"}
@@ -129,11 +131,49 @@ Targets must be existing enabled 12-channel wash fixtures. `mode` is exactly `of
 
 Targets must be enabled washes. `lookId` is exactly `warm-arrival`, `cyan-magenta`, or `calm-blue`, using existing `quickLook` levels/colors and side grouping.
 
-No laser/haze targets, disabled/unknown fixtures, `laser-duo`, strobe, raw channels, dynamic pattern code, schedules, arm commands, arbitrary URLs or JavaScript are accepted. The entire command and target batch validate before any change. Validation failure does not consume a lease. The API checks commissioning, blackout/release and lease freshness, consumes the lease, then checks the generation again immediately before the synchronous mutations, with no inference or await between them. Once consumed, even a partial/internal failure cannot repeat effects with the same lease.
+These three fixture commands accept no laser/haze targets, disabled/unknown fixtures, `laser-duo`, strobe, raw channels, dynamic pattern code, schedules, arm commands, arbitrary URLs or JavaScript. The entire command and target batch validate before any change. Validation failure does not consume a lease. The API checks commissioning, blackout/release and lease freshness, consumes the lease, then checks the generation again immediately before the synchronous mutations, with no inference or await between them. Once consumed, even a partial/internal failure cannot repeat effects with the same lease.
 
-Blackout or release is never cleared by apply. Master zero is never raised; a successful stored change with master zero reports `outputStatus:"master_zero"`. Existing `ShowController` manual takeover rules still stop competing writers for the selected scope and invalidate old authority.
+Blackout or release is never cleared by apply. Typed fixture commands never raise master zero; a successful stored change with master zero reports `outputStatus:"master_zero"`. Existing `ShowController` manual takeover rules still stop competing writers for the selected scope and invalidate old authority.
 
 Successful response: `{"ok":true,"command":<normalized accepted command>,"state":<sanitized readback>,"preview":<boolean>,"physicalOutput":"unverified"}`. This means Lightesota accepted the control state, not that physical lights were observed.
+
+The fourth command starts the existing lighting agent:
+
+```json
+{"kind":"agent_request","prompt":"Make the lights shift from left to right"}
+```
+
+`prompt` must be nonempty and at most **4096 UTF-8 bytes**, within the existing 8192-byte
+request cap. Admission consumes the same single-use lease and returns **HTTP 202** with
+`{ok:true,command:{kind:"agent_request"},request:{id,status:"accepted",summary:"",tools:[],remainingMs,physicalOutput:"unverified"},preview,physicalOutput:"unverified"}`.
+The prompt and private conversation ID are not echoed. Acceptance confirms only that the
+backend admitted work. The relay preserves this 202; it never treats acceptance as a Stop ACK.
+
+Read `state` for `running`, `completed`, `failed`, `cancelled`, `expired` or `unknown`.
+Status includes a bounded final summary and successful tool names, not tool arguments or
+private reasoning. Completion means the existing 12-round agent loop ended without reported
+tool/provider errors; it does not prove physical output. A failure/timeout may follow partial
+effects. Unknown submission/status must never trigger automatic resubmission.
+
+One remote request may run at a time; there is no queue or restart auto-resume. Up to 64
+volatile status records last through the original deadline plus five minutes. Authority
+uses the original generation and the remaining lease (wall and monotonic expiry), never a
+fresh 120 seconds after enqueue. Stop, cancellation, takeover, blackout/release and expiry
+block later tools, including pattern saves. Only exact synchronous generation changes from
+this request's own validated tools carry forward. Completed earlier effects are not rolled
+back by timeout. The short relay dispatch permit covers admission only; inference does not
+extend a relay/session deadline. Once accepted, a job can run to its original lease deadline
+even if its caller loses the acceptance reply; use read-only status or Stop.
+
+The remote capability explicitly allows `get_rig`, `get_show_state`, `list_patterns`,
+`read_pattern`, `write_pattern`, `apply_pattern`, `set_params`, `set_bpm`, `set_master`,
+`list_scenes`, `get_lasers`, `set_lasers`, `lasers_off`. All future/unknown tools fail closed.
+Pattern saves create new copies, at most eight per request and 65536 source bytes each,
+using the existing sandbox. Pattern apply is an explicit whole-rig ordinary Start and
+releases wash/Hue manual overrides and solo selection while retaining master. The typed fixture commands
+remain available for selected-fixture changes. No browser admin role is granted. Lasers
+require manual arming, a running show and existing typed geometry/strobe limits; pattern
+Follow remains operator-only. Haze stays disabled at the existing process/output boundary.
 
 ### POST `/api/integrations/giskard/stop`
 
@@ -163,7 +203,7 @@ Errors are JSON: `{"ok":false,"code":"...","error":"<sanitized actionable messag
 
 Fixed one-minute windows permit 240 non-Stop requests globally and 60 per allowed user. Stop has independent budgets of 120 globally and 30 per allowed user, so ordinary API use cannot exhaust its reserve. Global counts include only requests that pass dedicated bearer authentication and protected-transport checks. Per-user storage is bounded by the explicit allowlist, and the lease ledger is independently bounded.
 
-Structured audit entries contain only integration name, actor IDs (including trusted turn ID), command kind, target IDs, generation and result. They never contain prompt text, tokens, headers, lease IDs, history or raw exception/upstream bodies. There is no inference provider dependency in this API.
+Structured audit entries contain only integration name, actor IDs (including trusted turn ID), command kind, target IDs, generation and result. They never contain prompt text, tokens, headers, lease IDs, history or raw exception/upstream bodies. Natural requests use the existing provider asynchronously; state, lease, typed apply and Stop do not depend on inference completing.
 
 ## Validation and rollout
 

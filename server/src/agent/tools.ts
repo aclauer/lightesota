@@ -1,10 +1,11 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import {
-  engineFixtures, findProfile, findLaserLook, laserFixtures, laserIsOn, roleAllows, LASER_LOOKS, LASER_COLORS, LASER_PATTERNS, LASER_MUSIC_COLORS, LASER_PAN_MIN, LASER_PAN_MAX,
+  engineFixtures, washFixtures, findProfile, findLaserLook, laserFixtures, laserIsOn, roleAllows, LASER_LOOKS, LASER_COLORS, LASER_PATTERNS, LASER_MUSIC_COLORS, LASER_PAN_MIN, LASER_PAN_MAX,
   type LaserState, type ParamValues, type Rig, type Role, type Settings,
 } from "../../../shared/src/index.js";
 import type { Library } from "../library.js";
 import type { ShowController } from "../show.js";
+import { testPattern } from "../engine/sandbox.js";
 
 export interface AgentHost {
   library: Library;
@@ -17,6 +18,10 @@ export interface AgentHost {
 
 /** Who is talking to the agent on this turn; gates the laser tools. */
 export interface ToolCaller { role: Role; by: string }
+export interface GiskardTurn { generation: number; assertLive(): void }
+// Fixed capability, independent of role and model instructions. Future tools are denied by default.
+const GISKARD_TOOLS = new Set(["get_rig", "get_show_state", "list_patterns", "read_pattern", "write_pattern", "apply_pattern", "set_params", "set_bpm", "set_master", "list_scenes", "get_lasers", "set_lasers", "lasers_off"]);
+interface RemoteTools { check(): void; effect<T>(advances: number, fn: () => T): T; saves: number }
 
 type ToolDef = Anthropic.Beta.Messages.BetaTool;
 
@@ -133,6 +138,13 @@ export const TOOL_DEFS: ToolDef[] = [
   },
 ];
 
+export const GISKARD_TOOL_DEFS = TOOL_DEFS.filter(t => GISKARD_TOOLS.has(t.name)).map(t => ({ ...t,
+  description: t.name === "write_pattern" ? "Create a NEW saved pattern in the existing sandbox. Supplied IDs are copied, never overwritten. Use the returned ID. At most eight saves per request."
+    : t.name === "apply_pattern" ? "Explicitly Start this pattern across the whole ordinary rig, including Hue gradients and manually owned washes. Clears ordinary manual overrides and solo selection; retains master. Never clears blackout/release or authorizes pattern lasers."
+    : t.name === "set_lasers" ? "Use typed looks/presets on lasers an operator has ALREADY armed, while lighting is running. Never arms, clears gates or authorizes pattern Follow. Supply exactly one of look or lasers."
+    : t.description,
+}));
+
 const str = (v: unknown, name: string) => { if (typeof v !== "string") throw new Error(`${name} must be a string`); return v; };
 const num = (v: unknown, name: string) => { if (typeof v !== "number" || !Number.isFinite(v)) throw new Error(`${name} must be a number`); return v; };
 const obj = (v: unknown, name: string): Record<string, unknown> => {
@@ -142,14 +154,33 @@ const obj = (v: unknown, name: string): Record<string, unknown> => {
 };
 
 /** Keep the turn's authority across all provider iterations; never renew it after a tool call. */
-export function createTurnToolRunner(host: AgentHost, caller: ToolCaller = { role: "viewer", by: "" }) {
-  const generation = host.show.state.generation;
+export function createTurnToolRunner(host: AgentHost, caller: ToolCaller = { role: "viewer", by: "" }, remote?: GiskardTurn) {
+  let generation = remote?.generation ?? host.show.state.generation;
   const identity = { ...caller };
-  return (name: string, input: unknown) => runTool(host, name, input, identity, generation);
+  const check = () => {
+    if (!remote) return;
+    remote.assertLive(); host.show.assertGeneration(generation);
+    if (host.show.state.blackout || host.show.state.released) throw new Error("Remote output is blocked");
+  };
+  const authority: RemoteTools | undefined = remote ? { check, saves: 0, effect(advances, fn) {
+    check();
+    const expected = generation + advances;
+    const result = fn();
+    // Only the exact synchronous operation's known barriers carry forward. A reentrant
+    // takeover, failure or external change can never be adopted as this request's authority.
+    host.show.assertGeneration(expected); generation = expected; check(); return result;
+  } } : undefined;
+  return Object.assign((name: string, input: unknown) => runTool(host, name, input, identity, generation, authority), { assertActive: check });
 }
 
 /** Execute a tool call. Throws on invalid input or failure; the caller turns that into an error result. */
-export function runTool(host: AgentHost, name: string, rawInput: unknown, caller: ToolCaller = { role: "viewer", by: "" }, generation = host.show.state.generation): string {
+export function runTool(host: AgentHost, name: string, rawInput: unknown, caller: ToolCaller = { role: "viewer", by: "" }, generation = host.show.state.generation, remote?: RemoteTools): string {
+  if (remote) {
+    remote.check();
+    if (!GISKARD_TOOLS.has(name)) throw new Error("Tool is not available to Giskard");
+  }
+  const effect = <T>(advances: number, fn: () => T): T => remote ? remote.effect(advances, fn) : fn();
+  const laserControl = !!remote || roleAllows(caller.role, "admin");
   if ((name === "write_pattern" || name === "save_scene") && !roleAllows(caller.role, "guest")) throw new Error("A control role is required to save agent work");
   const changesOutput = ["apply_pattern", "set_params", "set_bpm", "set_master", "set_lasers"].includes(name);
   if (changesOutput) {
@@ -182,12 +213,16 @@ export function runTool(host: AgentHost, name: string, rawInput: unknown, caller
     }
     case "write_pattern": {
       const source = str(input.source, "source");
-      const id = input.id == null ? undefined : str(input.id, "id");
+      const id = remote || input.id == null ? undefined : str(input.id, "id");
       // Saving current source invalidates laser ownership synchronously. Decide whether the wash
       // reload was authorized before that invalidation, without renewing the rest of this turn.
       const applyLive = generation === host.show.state.generation && host.getSettings().agent.allowApply;
-      const saved = host.library.savePattern({ id, source });
-      host.onPatternSaved(saved.id, applyLive);
+      if (remote && (Buffer.byteLength(source) > 65536 || remote.saves >= 8)) throw new Error("Remote pattern save limit reached");
+      // Compilation can consume time. Check authority again immediately before writing bytes.
+      const prepared = remote ? testPattern(source) : undefined;
+      const saved = effect(0, () => host.library.savePattern({ id, source }, false, prepared));
+      if (remote) remote.saves++;
+      host.onPatternSaved(saved.id, remote ? false : applyLive);
       return JSON.stringify({ ok: true, id: saved.id, name: saved.name, params: saved.params, usesBeat: saved.usesBeat, swatch: saved.swatch, note: id && id !== saved.id ? "built-in was copied to a new user pattern" : undefined });
     }
     case "apply_pattern": {
@@ -195,18 +230,24 @@ export function runTool(host: AgentHost, name: string, rawInput: unknown, caller
       const id = str(input.id, "id");
       const params = input.params == null ? undefined : (obj(input.params, "params") as ParamValues);
       const fade = input.crossfadeMs == null ? undefined : num(input.crossfadeMs, "crossfadeMs");
-      host.show.setPattern(id, params, fade);
+      effect(1, () => host.show.setPattern(id, params, fade));
+      if (remote) {
+        const washes = washFixtures(host.getRig()).map(f => f.id);
+        if (washes.length) effect(1, () => host.show.releaseWashes(washes));
+        effect(1, () => host.show.clearOverrides());
+        if (host.show.state.solo.length) effect(1, () => host.show.setSolo([]));
+      }
       return JSON.stringify({ ok: true, params: host.show.state.params });
     }
     case "set_params":
       if (!host.getSettings().agent.allowApply) throw new Error("Changing the live show from the agent is disabled in settings");
-      host.show.setParams(obj(input.params, "params") as ParamValues, true);
+      effect(host.library.getPattern(host.show.state.patternId ?? "") ? 1 : 0, () => host.show.setParams(obj(input.params, "params") as ParamValues, true));
       return JSON.stringify({ ok: true, params: host.show.state.params });
     case "set_bpm":
-      host.show.setBpm(num(input.bpm, "bpm"));
+      effect(0, () => host.show.setBpm(num(input.bpm, "bpm")));
       return JSON.stringify({ ok: true, bpm: host.show.state.transport.bpm });
     case "set_master":
-      host.show.setMaster(num(input.level, "level"));
+      effect(1, () => host.show.setMaster(num(input.level, "level")));
       return JSON.stringify({ ok: true, master: host.show.state.master });
     case "save_scene": {
       const s = host.show.captureScene(str(input.name, "name"));
@@ -219,15 +260,15 @@ export function runTool(host: AgentHost, name: string, rawInput: unknown, caller
       return JSON.stringify({
         armed: L.armed, armedBy: L.armedBy, look: L.look, lookNote: L.look === "pattern" ? "the live pattern's lasers() is driving them" : undefined, blackout: host.show.state.blackout,
         stopped: host.show.state.stopped, released: host.show.state.released,
-        callerMayControl: roleAllows(caller.role, "admin"),
-        canApplyNow: roleAllows(caller.role, "admin") && host.getSettings().agent.allowApply && L.armed && !host.show.state.blackout && !host.show.state.stopped && !host.show.state.released,
+        callerMayControl: laserControl,
+        canApplyNow: laserControl && host.getSettings().agent.allowApply && L.armed && !host.show.state.blackout && !host.show.state.stopped && !host.show.state.released,
         lasers: laserFixtures(rig).map((f) => ({ id: f.id, name: f.name, on: laserIsOn(L.fixtures[f.id], L.armed, host.show.state.blackout || host.show.state.stopped || host.show.state.released), ...(L.fixtures[f.id] ?? {}) })),
         looks: LASER_LOOKS.map((l) => ({ id: l.id, name: l.name, description: l.description, animated: l.animated })),
         vocabulary: { patterns: LASER_PATTERNS, colors: LASER_COLORS, musicColors: LASER_MUSIC_COLORS, pan: [LASER_PAN_MIN, LASER_PAN_MAX], note: "pan is the spread of the unit's two mirrored fans (low = together, high = apart), not a direction; tilt, zoom and strobe are fixed by the operator and cannot be changed" },
       });
     }
     case "set_lasers": {
-      if (!roleAllows(caller.role, "admin")) throw new Error(`Only an admin can control the lasers${caller.by ? ` (${caller.by} is not one)` : ""}. Use lasers_off to turn them off.`);
+      if (!laserControl) throw new Error(`Only an admin can control the lasers${caller.by ? ` (${caller.by} is not one)` : ""}. Use lasers_off to turn them off.`);
       const command = obj(rawInput, "set_lasers");
       if (Object.keys(command).some((key) => key !== "look" && key !== "lasers")) throw new Error("Unknown set_lasers field");
       const hasLook = command.look != null, hasLasers = command.lasers != null;
@@ -265,13 +306,13 @@ export function runTool(host: AgentHost, name: string, rawInput: unknown, caller
       if (host.show.state.stopped) throw new Error("Lighting is stopped; an operator must explicitly Start first");
       if (host.show.state.blackout) throw new Error("Blackout is active; this tool cannot clear it");
       if (host.show.state.released) throw new Error("Output is released; this tool cannot take output control");
-      if (look !== null) host.show.setLaserLook(look);
-      else for (const { id, patch } of patches) host.show.setLaser(id, patch);
-      return runTool(host, "get_lasers", {}, caller, generation);
+      if (look !== null) effect(1, () => host.show.setLaserLook(look));
+      else for (const { id, patch } of patches) effect(1, () => host.show.setLaser(id, patch));
+      return runTool(host, "get_lasers", {}, caller, generation, remote);
     }
     case "lasers_off":
       if (!roleAllows(caller.role, "guest")) throw new Error("A control role is required to turn lasers off");
-      host.show.lasersOff(caller.by ? `${caller.by} via agent` : "agent");
+      effect(1, () => host.show.lasersOff(caller.by ? `${caller.by} via agent` : "agent"));
       return JSON.stringify({ ok: true, armed: false });
     default:
       throw new Error(`Unknown tool ${name}`);

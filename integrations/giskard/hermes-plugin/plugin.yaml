@@ -5,4 +5,5 @@ author: "aa-monts"
 provides_tools:
   - lighting_state
   - lighting_apply
+  - lighting_request
   - lighting_stop

@@ -1,5 +1,49 @@
 # Lighting integration changelog
 
+## 2026-11-09 — natural-language lighting requests (source; parent rollout pending)
+
+Giskard gains `lighting_request`: teammates can ask for a moving look without supplying
+fixture or preset IDs. The existing Lightesota lighting agent creates new sandboxed
+patterns, applies them and exposes owned progress/completion through `lighting_state`.
+An accepted request is explicitly not a completed or physically verified change. The
+existing typed `lighting_apply` and `lighting_stop` remain available.
+
+One request uses the original one-use lease and remaining deadline. Stop, takeover,
+cancel, expiry and restart prevent later effects; no queued work resumes after restart.
+Remote tools have a fixed allowlist and copy saved patterns instead of overwriting owner
+work. Whole-rig pattern Start includes Hue gradients and manually owned washes. Typed
+laser control requires prior operator arming; pattern Follow and existing geometry/strobe
+guards remain. Haze must remain disabled at process/output level. No browser admin role,
+raw DMX, OS/network capability, scheduling, provider change or UI/data migration is added.
+
+Parent acceptance passed: 172 server tests, 15 web tests, 27 relay tests, 9 HA
+wrapper tests, 6 deployment tests, 18 plugin tests and 17 HA integration tests;
+22 connector/bridge tests also passed with real loopback sockets and hardware vetoed.
+Shared/server/web typechecks and full application/relay builds passed. The actual Hermes
+PluginManager and both middleware chains loaded all four tools in an isolated home;
+acceptance versus completion, shared one-attempt authority, status IDs and stale/missing
+Slack context were verified without changing the real Hermes configuration.
+
+These are software checks, not physical fixture observations. Coordinated HA/relay/plugin
+deployment and the live Slack lighting/Stop acceptance follow publication. The accepted
+connector ACK recovery correction below is preserved.
+
+## 2026-11-09 — connector recovery correction
+
+The HA connector now keeps its still-valid fenced session after a lost result-upload
+acknowledgement instead of unnecessarily entering a session-replacement gap. It abandons
+the failed transfer without replaying the command or any result chunk. Authentication,
+protocol/storage failures, expiry, shutdown, Stop fences and durable receipts keep their
+existing handling. No deadline was increased.
+
+The parent verified 21 connector/bridge tests with real loopback sockets and hardware
+outputs vetoed, plus shared/server/web typechecks and the full application build.
+Production logs showed a successful Stop result followed by session-replacement conflicts
+during the failed follow-up read; the exact lost-ACK mechanism is reproduced in tests,
+not claimed as conclusively observed on HA. This change affects the HA connector only;
+Andrew's UI, saved lighting data, provider settings and Vercel runtime are unchanged.
+Live deployment and ordinary-light activation are being accepted separately below.
+
 ## 2026-11-09 — software live; physical output remains disabled
 
 Lightesota on Home Assistant now uses company-authorized DeepSeek Flash at maximum

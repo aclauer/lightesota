@@ -123,28 +123,35 @@ type BackendTransport = (action: Action, body: Body, signal: AbortSignal, dispat
 export class RelayConnectionError extends Error {
   constructor(readonly code = "unavailable") { super("Giskard relay connection unavailable"); }
 }
+/** Only local network/timeout events create this type; HTTP/protocol errors remain distinct. */
+export class RelayTransportError extends RelayConnectionError {
+  constructor() { super(); }
+}
 
 /** Node's direct HTTPS/HTTP clients ignore proxy environment variables and never follow redirects. */
 function post(url: URL, token: string, body: unknown, signal: AbortSignal, dispatch?: string): Promise<Reply> {
   const raw = Buffer.from(JSON.stringify(body));
   if (raw.length > 8192) return Promise.reject(failure());
   return new Promise((resolve, reject) => {
+    let httpFailure = false;
+    const interrupted = () => reject(httpFailure ? failure() : new RelayTransportError());
     const request = (url.protocol === "https:" ? https : http).request(url, { method: "POST", signal,
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "content-length": raw.length,
         ...(dispatch ? { "x-lightesota-relay-dispatch": dispatch } : {}) } }, response => {
+      httpFailure = response.statusCode !== 200; // A known HTTP refusal is not a lost success ACK.
       const chunks: Buffer[] = []; let length = 0;
       if (response.statusCode! >= 300 && response.statusCode! < 400 || response.headers["content-encoding"]
-        || !/^application\/json(?:\s*;|$)/i.test(response.headers["content-type"] ?? "")) { response.destroy(); reject(failure()); return; }
+        || !/^application\/json(?:\s*;|$)/i.test(response.headers["content-type"] ?? "")) { reject(failure()); response.destroy(); return; }
       response.on("data", (chunk: Buffer) => {
         length += chunk.length;
-        if (length > 65536) { response.destroy(); reject(failure()); return; }
+        if (length > 65536) { reject(failure()); response.destroy(); return; }
         chunks.push(chunk);
       });
       response.on("end", () => resolve({ status: response.statusCode!, raw: Buffer.concat(chunks) }));
-      response.on("error", () => reject(failure()));
-      response.on("aborted", () => reject(failure()));
+      response.on("error", interrupted);
+      response.on("aborted", interrupted);
     });
-    request.on("error", () => reject(failure())); request.end(raw);
+    request.on("error", interrupted); request.end(raw);
   });
 }
 export function cloudTransport(config: ConnectorConfig): Transport {
@@ -178,7 +185,9 @@ export class GiskardConnector {
     const signal = AbortSignal.any([this.controller.signal, this.sessionController.signal, AbortSignal.timeout(timeout)]);
     try {
       const reply = await this.cloud(route, { ...body, session: this.instance }, signal);
-      if (signal.aborted || route !== "session" && this.now() >= this.until) throw new RelayConnectionError("session_expired");
+      if (this.controller.signal.aborted || this.sessionController.signal.aborted
+        || route !== "session" && this.now() >= this.until) throw new RelayConnectionError("session_expired");
+      if (signal.aborted) throw new RelayTransportError();
       return reply;
     } catch (e) { throw e instanceof RelayConnectionError ? e : new RelayConnectionError(); }
   }
@@ -258,9 +267,13 @@ export class GiskardConnector {
           data: result.raw.subarray(index * 5400, (index + 1) * 5400).toString("base64") }, 1000);
       }
     } catch (e) {
-      // Stop/expiry may cancel just this job. Other transport losses abandon the session;
-      // neither path retries a result, lease or backend operation.
-      if (!(e instanceof RelayConnectionError && e.code === "expired")) throw e;
+      this.gate.close();
+      // Abandon the entire result transfer, never retry a chunk or backend operation.
+      // A lost ACK does not invalidate a still-live session; the next poll revalidates it.
+      if (e instanceof RelayConnectionError && e.code === "expired") return;
+      if (e instanceof RelayTransportError && !this.controller.signal.aborted && !this.sessionController.signal.aborted
+        && this.now() < this.until) return;
+      throw e; // Auth/config/protocol/storage errors and session loss retain their existing handling.
     }
   }
 }

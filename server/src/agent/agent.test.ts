@@ -120,6 +120,19 @@ test("one inference turn keeps its original generation across multiple provider 
   assert.match(agent.open(id)!.messages[2].toolCalls[0].result!, /Stale/);
 });
 
+test("browser conversation context cannot supply the internal Giskard capability", async t => {
+  const f = fixture(t); let round = 0;
+  f.show.quickLook("calm-blue", ["w1"]); f.show.armLasers(true, "Operator");
+  const agent = new AgentService(f.host, f.broadcast, { hermes: { fetch: async () => ++round === 1
+    ? sse(call("set_lasers", { look: "tight", lasers: null }), "tool_calls") : sse({ content: "Refused." }, "stop") } });
+  const untrustedContext = { ...context, role: "guest" as const, giskard: { generation: f.show.state.generation } };
+  const id = await agent.send(null, "Use lasers", untrustedContext);
+  assert.equal(agent.open(id)!.messages[1].toolCalls[0].isError, true);
+  assert.match(agent.open(id)!.messages[1].toolCalls[0].result!, /admin/);
+  assert.equal(f.show.state.lasers.look, null);
+  assert.ok(Object.values(f.show.state.lasers.fixtures).every(l => l.mode === "off"));
+});
+
 test("provider errors have no fallback or secret body leakage, and a tool loop stops at twelve rounds", async (t) => {
   const f = fixture(t); let count = 0;
   const agent = new AgentService(f.host, f.broadcast, {hermes:{fetch:async () => {count++; return sse(call("get_show_state", {}), "tool_calls");}}});

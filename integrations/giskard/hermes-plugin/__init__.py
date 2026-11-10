@@ -14,7 +14,7 @@ from typing import Any
 from urllib.parse import urlsplit
 from urllib.request import Request, HTTPRedirectHandler, ProxyHandler, build_opener
 
-TOOLS = ("lighting_state", "lighting_apply", "lighting_stop")
+TOOLS = ("lighting_state", "lighting_apply", "lighting_stop", "lighting_request")
 MAX_BODY = 65536
 
 
@@ -53,8 +53,8 @@ class Client:
     def post(self, path, body):
         if path not in {"state", "lease", "apply", "stop"}:
             raise ValueError("Unsupported lighting route")
-        data = json.dumps(body, allow_nan=False).encode()
-        if len(data) > MAX_BODY:
+        data = json.dumps(body, allow_nan=False, ensure_ascii=False).encode()
+        if len(data) > 8192:
             raise ValueError("Lighting request too large")
         request = Request(self.base_url + "/api/integrations/giskard/" + path, data=data,
                           headers={"Authorization": "Bearer " + self._token,
@@ -262,16 +262,32 @@ class LightingBridge:
             return denied("Invalid lighting arguments")
         route = name.removeprefix("lighting_")
         body: dict[str, Any] = {"identity": identity.body()}
-        if route == "apply":
-            if set(args) != {"command"} or not valid_command(args["command"]):
-                return denied("Only bounded ordinary-light commands are supported")
+        if route in {"apply", "request"}:
+            if route == "request":
+                prompt = args.get("prompt")
+                try:
+                    valid = isinstance(prompt, str) and bool(prompt.strip()) and len(prompt.encode("utf-8")) <= 4096
+                except UnicodeError:
+                    valid = False
+                if set(args) != {"prompt"} or not valid:
+                    return denied("Give a nonempty lighting prompt of at most 4096 UTF-8 bytes")
+                command = {"kind": "agent_request", "prompt": prompt}
+                route = "apply"
+            else:
+                if set(args) != {"command"} or not valid_command(args["command"]):
+                    return denied("Only bounded ordinary-light commands are supported")
+                command = args["command"]
             with self._lock:
                 record = self._turns.get(identity)
                 if (record is None or record.runtime != runtime or record.used
                         or record.lease is None or self.clock() >= record.expires):
                     return denied("This turn has no fresh lighting authority. Ask again in a new Slack message.")
                 record.used = True  # One attempt, including timeout/unknown outcome; never retry.
-                body.update(leaseId=record.lease, command=args["command"])
+                body.update(leaseId=record.lease, command=command)
+        elif route == "state":
+            if set(args) - {"requestId"} or ("requestId" in args and (not isinstance(args["requestId"], str) or re.fullmatch(r"[A-Za-z0-9_-]{24}", args["requestId"], flags=re.ASCII) is None)):
+                return denied("Give only the lighting request ID, or no arguments for latest owned status")
+            body.update(args)
         elif args:
             return denied("This lighting tool takes no arguments")
         elif route == "stop":
@@ -302,7 +318,10 @@ def register(ctx):
         commands.append({"type": "object", "properties": {"kind": {"const": kind}, "fixtureIds": ids, **fields},
                          "required": ["kind", "fixtureIds", *required], "additionalProperties": False})
     specs = [
-        ("lighting_state", "Read Lightesota's commanded lighting state and ordinary fixture IDs. This is not physical feedback.", empty),
+        ("lighting_state", "Read commanded state and your lighting request's progress/completion. Optional requestId must come from lighting_request, never a conversation ID. Without it, returns your latest request in this Slack context. Unknown is not a failed-before-effect result; never resubmit. After acceptance check at most twice this turn; if still running report that honestly and read status on a fresh Slack message. Not physical feedback.",
+         {"type": "object", "properties": {"requestId": {"type": "string", "pattern": "^[A-Za-z0-9_-]{24}$"}}, "additionalProperties": False}),
+        ("lighting_request", "Send a creative/natural-language lighting request to Lightesota's existing lighting designer, e.g. make the lights shift left to right. No fixture or preset IDs needed. May create new patterns and explicitly Start ordinary lights, or control already manually armed lasers with typed safe presets; never arms lasers, authorizes Follow, lifts blackout/release, or controls haze. One attempt per fresh Slack message, shared with lighting_apply. Accepted/running is NOT completed or physical confirmation. Read lighting_state for progress; never retry an unknown submission.",
+         {"type": "object", "properties": {"prompt": {"type": "string", "minLength": 1, "maxLength": 4096}}, "required": ["prompt"], "additionalProperties": False}),
         ("lighting_apply", "Apply one requested ordinary-light batch this turn. Read state for target IDs. No lasers, haze, strobe, schedules or code. Never retry an uncertain result.",
          {"type": "object", "properties": {"command": {"oneOf": commands}}, "required": ["command"], "additionalProperties": False}),
         ("lighting_stop", "Stop Lightesota output and disarm its effects immediately. No claim about an independent Home Assistant sender or physical feedback.", empty),

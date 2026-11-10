@@ -1,4 +1,4 @@
-import { PREVIEW } from "../output/policy.js";
+import { PREVIEW, HAZE_COMMISSIONED } from "../output/policy.js";
 import fs from "node:fs";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
@@ -6,7 +6,7 @@ import { nanoid } from "nanoid";
 import { HERMES_MODEL, type AgentChatMessage, type AgentConversation, type AgentEvent, type AgentToolCall, type AgentProviderStatus, type Role } from "../../../shared/src/index.js";
 import { config } from "../config.js";
 import { dynamicSystem, STATIC_SYSTEM } from "./prompt.js";
-import { createTurnToolRunner, TOOL_DEFS, type AgentHost } from "./tools.js";
+import { createTurnToolRunner, TOOL_DEFS, GISKARD_TOOL_DEFS, type AgentHost, type GiskardTurn } from "./tools.js";
 import { streamChatCompletion, validateBaseUrl, ProviderError, type OpenAIMessage } from "./openai.js";
 
 interface StoredConversation extends AgentConversation {
@@ -14,6 +14,8 @@ interface StoredConversation extends AgentConversation {
   history: Anthropic.Beta.Messages.BetaMessageParam[];
 }
 interface AnthropicRequest {
+  tools: typeof TOOL_DEFS;
+  system: string;
   model: string;
   effort: "low" | "medium" | "high" | "xhigh" | "max";
   messages: Anthropic.Beta.Messages.BetaMessageParam[];
@@ -27,6 +29,12 @@ interface AgentTestTransports {
   /** Pure in-process fake transports for offline tests; never populated by runtime config. */
   hermes?: { fetch: typeof fetch };
   anthropic?: (request: AnthropicRequest) => Promise<AnthropicReply>;
+  now?: () => number;
+}
+type RequestStatus = "accepted" | "running" | "completed" | "failed" | "cancelled" | "expired";
+interface LightingRequest {
+  id: string; owner: string; status: RequestStatus; until: number; retainUntil: number;
+  abort: AbortController; summary: string; tools: string[];
 }
 
 /** Bounded lighting agent. Providers have no capabilities beyond the existing tool definitions. */
@@ -35,6 +43,9 @@ export class AgentService {
   private running = new Map<string, AbortController>();
   private dir = path.join(config.dataDir, "agent");
   private lastStatus: AgentProviderStatus | undefined;
+  private lightingRequests = new Map<string, LightingRequest>();
+  private activeLightingRequest: LightingRequest | undefined;
+  private now = () => this.testTransports.now ? this.testTransports.now() : performance.now();
 
   constructor(private host: AgentHost, private broadcast: (ev: AgentEvent, conversationId: string | null, ownerDeviceId: string | undefined) => void, private testTransports: AgentTestTransports = {}) {
     host.show.on("lightingStopped", () => this.cancelAll());
@@ -69,8 +80,8 @@ export class AgentService {
       betas: ["thinking-binding-controls-2026-08-01"],
       thinking: { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } } as unknown as Anthropic.Beta.Messages.BetaThinkingConfigParam,
       output_config: { effort: request.effort },
-      system: [{ type: "text", text: STATIC_SYSTEM, cache_control: { type: "ephemeral" } }],
-      tools: TOOL_DEFS,
+      system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
+      tools: request.tools,
       messages: request.messages,
     }, { signal: request.signal });
     stream.on("text", request.onText);
@@ -117,9 +128,54 @@ export class AgentService {
   }
   open(id: string): AgentConversation | null { const c = this.load(id); return c ? this.publicConversation(c) : null; }
   cancel(id: string) { this.running.get(id)?.abort(); }
-  cancelAll() { for (const abort of this.running.values()) abort.abort(); }
+  cancelAll() {
+    const job = this.activeLightingRequest;
+    if (job && ["accepted", "running"].includes(job.status)) { job.status = "cancelled"; job.abort.abort(); }
+    for (const abort of this.running.values()) abort.abort();
+  }
 
-  async send(conversationId: string | null, text: string, context?: { patternId?: string | null; by?: string; owner?: { deviceId: string; name: string }; role?: Role }) {
+  /** One volatile request, no queue or restart recovery. Its pre-inference lease is never renewed. */
+  requestLighting(prompt: string, owner: string, generation: number, remainingMs: number) {
+    if (HAZE_COMMISSIONED) throw new Error("Giskard requests require haze disabled at process start");
+    if (this.activeLightingRequest) throw new Error("A lighting request is already running");
+    if (!prompt.trim() || Buffer.byteLength(prompt) > 4096 || !Number.isFinite(remainingMs) || remainingMs <= 0 || remainingMs > 120000) throw new Error("Invalid lighting request");
+    this.host.show.assertGeneration(generation);
+    const now = this.now();
+    for (const [id, job] of this.lightingRequests) if (now >= job.retainUntil) this.lightingRequests.delete(id);
+    if (this.lightingRequests.size >= 64) throw new Error("Lighting request status capacity reached");
+    const job: LightingRequest = { id: nanoid(24), owner, status: "accepted", until: now + remainingMs,
+      retainUntil: now + remainingMs + 300000, abort: new AbortController(), summary: "", tools: [] };
+    this.lightingRequests.set(job.id, job); this.activeLightingRequest = job;
+    const assertLive = () => {
+      if (this.now() >= job.until) { job.status = "expired"; job.abort.abort(); }
+      job.abort.signal.throwIfAborted();
+    };
+    const timer = setTimeout(() => { job.status = "expired"; job.abort.abort(); }, remainingMs); timer.unref();
+    // Admission returns before any inference. The signal/deadline still guards this queued start.
+    void Promise.resolve().then(async () => {
+      assertLive(); job.status = "running";
+      const id = await this.send(null, prompt, { role: "guest", by: "Giskard", owner: { deviceId: `giskard-${owner}`, name: "Giskard" } },
+        { generation, assertLive, signal: job.abort.signal, progress: name => { if (job.tools.length < 32) job.tools.push(name); } });
+      assertLive();
+      const messages = this.open(id)?.messages;
+      job.status = !messages || messages.some(m => m.error || m.toolCalls.some(t => t.isError)) ? "failed" : "completed";
+      job.summary = job.status === "completed" ? (messages!.at(-1)?.text ?? "").slice(0, 2000) : "Request did not complete cleanly; earlier effects may remain. Read current state before a fresh request.";
+    }).catch(() => {
+      if (!job.abort.signal.aborted) job.status = "failed";
+      job.summary = "Request ended without confirmed completion; earlier effects may remain. Never resubmit this request.";
+    }).finally(() => { clearTimeout(timer); this.activeLightingRequest = undefined; });
+    return this.lightingRequestStatus(owner, job.id);
+  }
+
+  lightingRequestStatus(owner: string, id?: string) {
+    const job = id ? this.lightingRequests.get(id) : [...this.lightingRequests.values()].reverse().find(j => j.owner === owner);
+    if (!job || job.owner !== owner || this.now() >= job.retainUntil) return { status: "unknown" as const };
+    if (["accepted", "running"].includes(job.status) && this.now() >= job.until) { job.status = "expired"; job.abort.abort(); }
+    return { id: job.id, status: job.status, summary: job.summary, tools: [...job.tools], remainingMs: Math.max(0, Math.floor(job.until - this.now())), physicalOutput: "unverified" as const };
+  }
+
+  async send(conversationId: string | null, text: string, context?: { patternId?: string | null; by?: string; owner?: { deviceId: string; name: string }; role?: Role },
+    giskard?: GiskardTurn & { signal: AbortSignal; progress(name: string): void }) {
     const settings = {...this.host.getSettings().agent};
     if (settings.provider !== "hermes" && settings.provider !== "anthropic") throw new Error("Choose a supported agent provider in Settings.");
     const injected = settings.provider === "hermes" ? !!this.testTransports.hermes : !!this.testTransports.anthropic;
@@ -127,7 +183,10 @@ export class AgentService {
     if (settings.provider === "hermes" && (settings.model !== HERMES_MODEL || settings.effort !== "max")) throw new Error("Hermes requires deepseek/deepseek-v4.1-flash-1017 with max reasoning.");
     if (!injected && !this.hasCredentials()) throw new Error(this.status().message);
     // Capture exactly once, before any inference. Retries/rounds never renew authority.
-    const runTurnTool = createTurnToolRunner(this.host, {role:context?.role ?? "viewer",by:context?.by ?? ""});
+    const runTurnTool = createTurnToolRunner(this.host, {role:context?.role ?? "viewer",by:context?.by ?? ""}, giskard);
+    runTurnTool.assertActive();
+    const tools = giskard ? GISKARD_TOOL_DEFS : TOOL_DEFS;
+    const system = STATIC_SYSTEM + (giskard ? "\nThis is a fresh authorized Giskard lighting request. Use only the supplied remote capabilities. Pattern saves always create new copies: use the returned ID. apply_pattern is an explicit whole-rig ordinary Start (also releases manual wash/Hue overrides and solo selection), never blackout/release or laser Follow. Existing master remains; inspect state before changing it. Typed laser presets require prior manual arming. Haze is disabled. Report tool errors or incomplete work honestly, and never claim physical verification. Authority expires with the original Slack lease; do not retry stale work." : "");
     const existing = conversationId ? this.load(conversationId) : null;
     if (conversationId && !existing) throw new Error("Conversation not found");
     if (existing && context?.role !== "admin" && (!context?.owner || existing.ownerDeviceId !== context.owner.deviceId)) throw new Error("That conversation belongs to someone else");
@@ -148,17 +207,21 @@ export class AgentService {
       const pattern = this.host.library.getPattern(context.patternId);
       if (pattern) userText += `\n\n(The user currently has pattern "${pattern.name}" (id ${pattern.id}) selected in the editor.)`;
     }
-    const hermesHistory: OpenAIMessage[] = [{role:"system",content:STATIC_SYSTEM},...transcript,{role:"user",content:userText}];
+    const hermesHistory: OpenAIMessage[] = [{role:"system",content:system},...transcript,{role:"user",content:userText}];
     const anthropicHistory: Anthropic.Beta.Messages.BetaMessageParam[] = [...transcript,{role:"user",content:userText}];
     if (settings.provider === "anthropic") conv.history.push({role:"user",content:userText});
     this.save(conv);
     const abort = new AbortController(); this.running.set(conv.id,abort);
+    const cancelRemote = () => abort.abort();
+    giskard?.signal.addEventListener("abort", cancelRemote, { once: true });
+    if (giskard?.signal.aborted) cancelRemote();
     this.broadcast({type:"message",conversationId:conv.id,message:userMsg},conv.id,owner);
     this.broadcast({type:"busy",conversationId:conv.id,busy:true},conv.id,owner);
     const statusBase = {provider:settings.provider,model:settings.model,reasoning:settings.provider === "hermes" ? "max (thinking enabled)" : `${settings.effort} (adaptive thinking)`};
     try {
       for (let iteration=0; iteration<12; iteration++) {
         abort.signal.throwIfAborted();
+        runTurnTool.assertActive();
         const assistant: AgentChatMessage = {id:nanoid(8),role:"assistant",text:"",toolCalls:[],createdAt:Date.now(),streaming:true};
         conv.messages.push(assistant);
         this.broadcast({type:"message",conversationId:conv.id,message:assistant},conv.id,owner);
@@ -191,7 +254,7 @@ export class AgentService {
             proxyKey:this.testTransports.hermes ? undefined : process.env.LIGHTESOTA_HERMES_PROXY_KEY || undefined,
             fetch:this.testTransports.hermes?.fetch,
             model:HERMES_MODEL,maxTokens:32000,reasoningEffort:"max",thinking:{type:"enabled"},messages:hermesHistory,
-            tools:TOOL_DEFS.map(tool => ({type:"function",function:{name:tool.name,description:tool.description,parameters:tool.input_schema,strict:true}})),
+            tools:tools.map(tool => ({type:"function",function:{name:tool.name,description:tool.description,parameters:tool.input_schema,strict:true}})),
             signal:abort.signal,onText,
             onToolDelta: delta => {
               // Stream identifiers may themselves be fragmented. Use a stable UI-only id.
@@ -206,7 +269,7 @@ export class AgentService {
         } else {
           const stateMessage = {role:"system" as const,content:state};
           anthropicHistory.push(stateMessage); conv.history.push(stateMessage);
-          const reply = await this.anthropic({model:settings.model,effort:settings.effort,messages:anthropicHistory,signal:abort.signal,onText,onToolStart,onToolDelta});
+          const reply = await this.anthropic({model:settings.model,effort:settings.effort,tools,system,messages:anthropicHistory,signal:abort.signal,onText,onToolStart,onToolDelta});
           abort.signal.throwIfAborted();
           const message = {role:"assistant" as const,content:reply.content};
           anthropicHistory.push(message); conv.history.push(message);
@@ -216,6 +279,7 @@ export class AgentService {
           if (toolUses.some(t => !t.id || !t.name || !t.input || typeof t.input !== "object" || Array.isArray(t.input))) throw new Error("The provider returned invalid tool arguments; no tools were run.");
         }
         this.lastStatus = {...statusBase,state:"usable",message:"The latest provider response completed successfully; this does not verify physical output."};
+        runTurnTool.assertActive();
         if (!toolUses.length) { assistant.streaming=false; break; }
         const results: Anthropic.Beta.Messages.BetaToolResultBlockParam[] = [];
         for (const [index,tu] of toolUses.entries()) {
@@ -227,6 +291,7 @@ export class AgentService {
           try { result=runTurnTool(tu.name,tu.input); }
           catch (e) { result=`Error: ${(e as Error).message}`; isError=true; }
           call.result = result.length > 4000 ? result.slice(0,4000)+"…" : result; call.isError=isError;
+          if (!isError) giskard?.progress(tu.name);
           this.broadcast({type:"toolEnd",conversationId:conv.id,messageId:assistant.id,callId:call.id,result:call.result,isError},conv.id,owner);
           hermesHistory.push({role:"tool",tool_call_id:tu.id,content:result});
           results.push({type:"tool_result",tool_use_id:tu.id,content:result,is_error:isError});
@@ -254,6 +319,7 @@ export class AgentService {
       if (last?.role === "assistant") last.error=message;
       else conv.messages.push({id:nanoid(8),role:"assistant",text:"",toolCalls:[],createdAt:Date.now(),error:message});
     } finally {
+      giskard?.signal.removeEventListener("abort", cancelRemote);
       this.running.delete(conv.id);
       for (const message of conv.messages) message.streaming=false;
       // A delete during inference must not resurrect the conversation.

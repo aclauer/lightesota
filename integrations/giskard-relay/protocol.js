@@ -28,14 +28,19 @@ export function configuration(env) {
   return config;
 }
 export function admission(action, body, config) {
-  check(exact(body, action === 'apply' ? ['identity', 'leaseId', 'command'] : ['identity']));
+  check(exact(body, action === 'apply' ? ['identity', 'leaseId', 'command'] : action === 'state' ? ['identity', 'requestId'] : ['identity']));
   const i = body.identity;
   check(exact(i, ['teamId', 'channelId', 'userId', 'turnId']) && typeof i.turnId === 'string'
     && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(i.turnId));
   check(i.teamId === config.team && i.channelId === config.channel && config.users.includes(i.userId), 'identity_denied', 403);
+  if (action === 'state' && body.requestId !== undefined) check(typeof body.requestId === 'string' && /^[A-Za-z0-9_-]{24}$/.test(body.requestId));
   if (action !== 'apply') return;
   check(typeof body.leaseId === 'string' && /^[A-Za-z0-9_-]{43}$/.test(body.leaseId));
   const c = body.command;
+  if (c?.kind === 'agent_request') {
+    check(exact(c, ['kind', 'prompt']) && typeof c.prompt === 'string' && c.prompt.trim().length > 0 && Buffer.byteLength(c.prompt) <= 4096);
+    return;
+  }
   const fields = { set_lights: ['kind', 'fixtureIds', 'brightness', 'color'], wash_mode: ['kind', 'fixtureIds', 'mode', 'sensitivity'], quick_look: ['kind', 'fixtureIds', 'lookId'] };
   check(c && typeof c.kind === 'string' && Object.hasOwn(fields, c.kind) && exact(c, fields[c.kind]));
   check(Array.isArray(c.fixtureIds) && c.fixtureIds.length > 0 && c.fixtureIds.length <= 128

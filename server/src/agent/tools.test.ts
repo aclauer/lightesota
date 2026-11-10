@@ -58,6 +58,47 @@ test("write_pattern surfaces compile errors as thrown errors", (t) => {
   host.show.engine.stop();
 });
 
+test("Giskard capability denies future/haze tools, copies saved work and carries only its own barriers", t => {
+  const host = makeHost(t);
+  const run = createTurnToolRunner(host, { role: "guest", by: "Giskard" }, { generation: host.show.state.generation, assertLive() {} });
+  for (const name of ["set_haze", "arm_lasers", "follow_pattern_lasers", "raw_dmx", "save_scene", "future_tool"]) assert.throws(() => run(name, {}), /not available/);
+  const source = 'export default { name: "Owner", render(ctx) { ctx.fill("#ff0000"); } };';
+  const original = host.library.savePattern({ source });
+  const saved = JSON.parse(run("write_pattern", { id: original.id, source: source.replace("Owner", "Copy") }));
+  assert.notEqual(saved.id, original.id); assert.equal(host.library.getPattern(original.id)?.source, source);
+  run("apply_pattern", { id: saved.id, params: null, crossfadeMs: 0 });
+  run("set_master", { level: 0.4 });
+  run("set_bpm", { bpm: 90 });
+  assert.equal(host.show.state.master, 0.4); assert.equal(host.show.state.stopped, false);
+  assert.throws(() => run("set_lasers", { look: "tight", lasers: null }), /explicitly arm/);
+  host.show.setMaster(0.1);
+  assert.throws(() => run("set_master", { level: 1 }), /Stale/);
+  assert.throws(() => run("write_pattern", { id: null, source }), /Stale/);
+});
+
+test("Giskard can use already manually armed typed lasers without admin, arming or Follow authority", t => {
+  const host = makeHost(t);
+  host.show.quickLook("calm-blue", ["w1"]); host.show.armLasers(true, "Operator");
+  const run = createTurnToolRunner(host, { role: "guest", by: "Giskard" }, { generation: host.show.state.generation, assertLive() {} });
+  assert.throws(() => run("set_lasers", { look: "pattern", lasers: null }), /Unknown/);
+  assert.throws(() => run("set_lasers", { look: null, lasers: [{ id: "l1", tilt: 255 }] }), /Unknown/);
+  assert.equal(JSON.parse(run("set_lasers", { look: "tight", lasers: null })).look, "tight");
+  assert.equal(host.show.state.lasers.armedBy, "Operator");
+  run("set_master", { level: 0.5 }); // Own typed operation is a coherent batch, not a fresh lease.
+  host.show.setBlackout(true);
+  assert.throws(() => run("set_lasers", { look: "wide", lasers: null }), /Stale|blocked/);
+  assert.equal(host.show.state.lasers.armed, false);
+});
+
+test("Giskard rejects authority changes inside a synchronous effect instead of adopting them", t => {
+  const host = makeHost(t), original = host.show.setMaster.bind(host.show);
+  const run = createTurnToolRunner(host, { role: "guest", by: "Giskard" }, { generation: host.show.state.generation, assertLive() {} });
+  t.mock.method(host.show, "setMaster", (value: number) => { original(value); host.show.stopLighting(); });
+  assert.throws(() => run("set_master", { level: 0.5 }), /Stale/);
+  assert.throws(() => run("set_bpm", { bpm: 90 }), /Stale/);
+  assert.equal(host.show.state.stopped, true);
+});
+
 test("get_rig hides nothing about lasers but exposes only enabled fixtures", (t) => {
   const host = makeHost(t);
   const r = JSON.parse(runTool(host, "get_rig", {}));

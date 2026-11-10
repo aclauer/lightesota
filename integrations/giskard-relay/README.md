@@ -10,7 +10,7 @@ known limitation. Physical output is disabled and physical commissioning is sepa
 See the [dated rollout record](../../docs/lighting-integration-changelog.md) for exact scope.
 
 ```text
-Company Hermes Giskard (unchanged three tools)
+Company Hermes Giskard (four named lighting tools)
   HTTPS POST state / lease / apply / stop, credential A
 Vercel Node Function, production only, dimensionalos
   one private Blob: lightesota-giskard/mailbox-v1.json
@@ -22,7 +22,7 @@ Existing Lightesota router and ShowController
 ```
 
 There is no route to `10.10.0.192` from Vercel, inbound HA tunnel, admin proxy,
-arbitrary destination, extra model tool, UI, scheduler or new lighting sender.
+arbitrary destination, general-purpose tool, UI, scheduler or new lighting sender.
 Inference/provider settings, Andrew's data/features and existing hardware gates are unchanged.
 
 ## Deployment owner configuration
@@ -50,7 +50,8 @@ are checked for equality; the owner must also ensure A differs from C.
 | Existing company Giskard configuration | `LIGHTESOTA_GISKARD_BASE_URL` | Same fixed production HTTPS origin |
 | Existing company Giskard protected configuration | `LIGHTESOTA_GISKARD_TOKEN` | Secret A, **not** C in this relay topology |
 
-Keep the existing Hermes tool set, stable Slack receipts, provider configuration,
+Add only the named `lighting_request` capability to the existing Hermes tool policy;
+keep stable Slack receipts, provider configuration,
 DeepSeek selection, credentials and unrelated profiles intact. Keep output/haze
 commissioning false throughout software acceptance. Old HA option files default the
 connector off even if an inherited environment attempted to enable it. Invalid new
@@ -250,7 +251,24 @@ unavailable, expired bytes can remain in the **private** object until the next s
 access; they cannot be returned or executed. Blob provides no background TTL cleanup in
 this design. There is no scheduler and no claim of guaranteed physical erasure during
 an outage. HA/gateway replay receipts remain permanent; cloud fences persist and temporary
-hashes expire on access. No raw prompts or credentials enter the mailbox.
+hashes expire on access. Natural requests now carry at most 4096 UTF-8 bytes of lighting
+prompt inside their bounded private apply body, removed under the same expiry/consumption
+rules. Credentials never enter the mailbox. HA stores the agent's conversation using its
+existing private conversation storage; gateway and HA receipt ledgers still contain no prompts.
+
+### Natural-language lighting requests
+
+`lighting_request {prompt}` uses the existing apply route with command
+`{kind:"agent_request",prompt}`. Only an actual backend **202 accepted** can acknowledge
+admission; it does not confirm completion or light output. The existing state route accepts
+an optional 24-character `requestId` and returns only that Slack actor/channel's status.
+No new endpoint, RPC/session timeout, connector retry or receipt rule is added. Slow work
+runs in HA's existing agent under the original lease deadline; no dispatch permit is held
+through inference. A lost acceptance can leave that bounded job running, so read status or
+Stop and never resubmit. The [API contract](../../docs/giskard-lighting.md) specifies
+capabilities, status retention, manual laser gates and the hard haze-disabled prerequisite.
+Deploy the coordinated relay schema, HA agent/API and plugin manifest before enabling the
+new named tool. This source addition has offline coverage; parent retains live acceptance.
 
 ### Stop, expiry and the effect boundary
 
@@ -294,7 +312,16 @@ remains required.
 One process owns the SQLite lock. Cloud sessions last 30 seconds, require recent health
 (12 seconds) for new admission and cannot be stolen while live. Polls renew at most once
 per 8 seconds. Expired sessions cannot poll or submit results; takeover fences prior work.
-On transport loss, startup failure or local session expiry, the connector closes the
+On a result-upload network/timeout failure, the connector closes the effect permit and
+abandons that entire result transfer. If its existing fenced session is still locally
+valid, it continues polling with the same session; it never resends the backend operation
+or any result chunk. This does not extend the session, job or dispatch deadlines, and the
+next poll must still validate the session. Partial results cannot report success. Explicit
+HTTP/protocol/storage errors retain their existing failure handling. This source correction
+addresses an injected lost-ACK reproduction; its rollout is parent-owned and it does not
+establish the cause of the observed intermittent Slack failure described above.
+
+On session/poll transport loss, startup failure or local session expiry, the connector closes the
 permit, abandons the session, and automatically requests a **new random incarnation**.
 Retry waits are 1, 2, 4, 8, then at most 15 seconds, reset after a successful poll. An idle
 healthy connector needs no restart after an outage. New sessions accept only new work:
@@ -355,7 +382,7 @@ Parent live checks, in order:
 3. From the company Giskard host, issue a **new allowlisted Slack state request**, then a
    **new Stop request**. The plugin's fixed HTTPS client supplies A and trusted identity.
    Require actual backend state/Stop acknowledgement under 8 seconds; observe HA stopped
-   state independently. Check denied foreign/DM contexts and the unchanged three-tool surface.
+   state independently. Check denied foreign/DM contexts and the four named lighting tools.
 4. In an isolated, uncommissioned acceptance installation with production-gated relay
    configuration (Vercel Preview must remain denied), run one apply and lose its response.
    Interrupt startup, then interrupt cloud access beyond 30 seconds; verify recovery under
@@ -363,8 +390,9 @@ Parent live checks, in order:
    restart connector/backend while retaining receipts. Check stale pre-Stop leases,
    disconnected HA, expired jobs, ambiguous first creation and concurrent CAS conflicts
    against the actual private store. Never inject these failures into commissioned hardware.
-5. Ordinary-light commissioning/onsite observation is a separate owner action. No lasers,
-   haze, strobe or raw DMX tests are authorized by software acceptance.
+5. Physical commissioning/onsite observation remains a separate parent action. Laser use
+   requires actual manual arming and existing operator safety controls; haze stays disabled.
+   Source acceptance never establishes physical readiness.
 
 For the parent's explicit HTTPS state/Stop probe, run the following from a reviewed checkout
 on the company gateway host **only after authorizing Stop at that time**. Existing protected

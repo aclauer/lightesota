@@ -1,7 +1,7 @@
 # Giskard → Lightesota
 
-This native Hermes plugin adds **only** `lighting_state`, `lighting_apply`, and
-`lighting_stop` to Giskard. It calls Lightesota's authenticated API; it never
+This native Hermes plugin adds **only** `lighting_request`, `lighting_state`,
+`lighting_apply`, and `lighting_stop` to Giskard. It calls Lightesota's authenticated API; it never
 sends DMX, talks to Hue/Home Assistant directly, runs shell commands, or changes
 Giskard's model. Keep Giskard's existing DeepSeek Flash/max configuration and
 other tool restrictions intact.
@@ -11,15 +11,28 @@ other tool restrictions intact.
 In the allowlisted Slack channel, mention Giskard to start a request. Examples:
 
 - “What ordinary lights are configured?”
+- “Make the lights shift from left to right.”
 - “Set washes 1 and 2 to orange at 30%.”
 - “Put washes 3 and 4 in Music6 mode.”
 - “Stop the lighting.”
 
-An apply is one batch of the same operation per human message. Target IDs come
-from `lighting_state`; the model does not supply identity, credentials, endpoint
-URLs, or an authorization lease. Lasers, haze, strobe, schedules, arbitrary code,
-and raw DMX are not exposed. Normal Lightesota controls remain available to the
-operator independently of Slack.
+Use `lighting_request {prompt}` for creative requests without fixture/preset IDs.
+It starts the existing Lightesota lighting agent asynchronously. `accepted`/`running`
+is not completion: `lighting_state {requestId?}` returns progress and the final status
+for that Slack actor and channel. Without an ID it returns the actor's latest request.
+Check at most twice in a turn; if still running, report that and read status on a fresh
+message. Never resubmit an unknown request. One request or typed apply attempt is allowed
+per human message, using the same pre-inference lease. The model supplies no identity,
+credentials, URL, lease or conversation ID.
+
+Remote agent tools may save new sandboxed patterns and explicitly Start ordinary lights
+across the rig, including Hue gradients and manual washes. Saved owner patterns are
+copied, never overwritten. Typed laser presets require existing manual arming and a
+running show; pattern lasers still require the operator's explicit Follow authorization.
+There is no auto-arm, haze, raw DMX, OS/network or scheduling capability. Haze must remain
+disabled at process/output level (`LIGHTESOTA_HAZE_COMMISSIONED=0`). Normal operator
+controls and saved data remain intact. The existing `lighting_apply {command}` tool
+still offers the three bounded ordinary-fixture commands below that level.
 
 Results describe **commanded state, not observed light output**. A zero master,
 blackout, released output, preview or uncommissioned output is reported rather
@@ -37,7 +50,9 @@ private office IP; a connector inside the HA Lightesota process polls outbound H
 For that topology, use its three-credential configuration table: the plugin's token
 authenticates to the relay, while HA uses a different token for the existing backend.
 The shared server/gateway token description below applies to a direct protected route.
-The plugin and its tool authority are unchanged; relay live acceptance remains pending.
+The existing state/Stop path has parent-recorded live acceptance in the changelog.
+The new natural-language capability requires coordinated HA, relay and plugin rollout
+and separate parent acceptance; this source change does not deploy or commission output.
 
 Do not enable the plugin or API just because the code has been published.
 
@@ -111,7 +126,7 @@ local profiles, histories or credentials. For an upgrade, preserve the previous
 plugin directory outside the discovery tree before replacing it.
 
 Enable `lightesota` through the Plugins UI or `hermes plugins enable lightesota`.
-Allow its three tools in the gateway's tool policy without enabling shell,
+Allow its four named tools in the gateway's tool policy without enabling shell,
 terminal, browser, filesystem, memory, cron or unrelated toolsets. Preserve every
 existing plugin and source allowlist. Keep `LIGHTESOTA_GISKARD_ENABLED=0` until the
 route, server configuration and identity policy are verified. Reload/restart the
@@ -147,9 +162,17 @@ This is an ingress check; the backend protocol and model arguments are unchanged
 The tool middleware binds trusted context only for the duration of the handler.
 Direct handler calls, DMs, other platforms, cron, missing context and foreign
 actors fail closed, even if Hermes treats a middleware exception as fail-open.
-A single apply attempt consumes local authority, including a timeout. The server
+A single apply or natural request attempt consumes local authority, including a timeout. The server
 also checks its one-use lease, boot and original ownership generation immediately
 before applying controls. Stop or a manual takeover defeats an older response.
+
+Only one remote agent request runs at once, with no waiting queue or persisted job resume.
+It has at most the **remaining** original 120-second lease, including time already spent
+in Giskard inference. Provider rounds never renew it. Status lasts at most five minutes
+after that deadline, with 64 retained records. `failed`, `cancelled`, `expired` and
+`unknown` do not mean no earlier effects occurred. Stop remains available while inference
+runs. A lost enqueue response can leave a bounded job running: read state or Stop, never
+retry submission. Conversations and newly created patterns use Lightesota's existing storage.
 
 The server's lease ledger is boot-local; the plugin additionally commits each
 stable event hash to `$HERMES_HOME/plugin-data/lightesota/events.db` **before**
@@ -182,7 +205,7 @@ global clock or changing real profiles.
 
 Before calling the integration live, verify in order:
 
-- A new company gateway conversation exposes exactly the three new lighting tools
+- A new company gateway conversation exposes exactly the four named lighting tools
   alongside its existing authorized tools, with no general-purpose tool expansion.
 - Verify the hosted adapter populates trusted `HERMES_SESSION_MESSAGE_ID` from each
   message event's original `ts`, including replies, rather than `thread_ts`, an edit
@@ -197,8 +220,12 @@ Before calling the integration live, verify in order:
   the gateway and preview backend, retaining the profile database: the same Slack
   message must acquire no new lease; a genuinely new message may acquire one.
   Verify database availability and these checks before physical commissioning.
-- After separately authorizing an onsite ordinary-light check, read back accepted
-  state and obtain the observer's confirmation. Do not test lasers/haze/strobe.
+- Parent must rerun the real loader/middleware tests with the new manifest/tool list,
+  verify `lighting_request` uses the existing durable receipt and `apply` path, and check
+  accepted → running → completed plus Stop during inference. Source tests fake inference.
+- For separately authorized onsite tests, read back status and obtain the observer's
+  confirmation. Laser tests require actual manual arming and existing safety controls;
+  haze stays disabled. Neither a completed job nor a status read is physical feedback.
 
 For rollback, disable the plugin and set the API's enabled flag to `0`, then reload
 the respective services. This does not roll back the inference provider, change

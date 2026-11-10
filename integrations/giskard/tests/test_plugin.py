@@ -74,6 +74,42 @@ class PluginTests(unittest.TestCase):
         self.begin()
         self.assertFalse(json.loads(self.bridge.handle("lighting_stop", {}))["ok"])
         self.assertEqual([p for p, _ in self.client.calls], ["lease"])
+    def test_natural_request_uses_one_attempt_and_state_remains_read_only(self):
+        self.begin()
+        prompt = "Make the lights shift from left to right"
+        self.assertTrue(self.invoke("lighting_request", {"prompt": prompt})["ok"])
+        self.assertEqual(self.client.calls[-1][0], "apply")
+        self.assertEqual(self.client.calls[-1][1]["command"], {"kind": "agent_request", "prompt": prompt})
+        self.assertFalse(self.invoke("lighting_apply", {"command": COMMAND})["ok"])
+        self.assertFalse(self.invoke("lighting_request", {"prompt": prompt})["ok"])
+        self.assertTrue(self.invoke("lighting_state", {"requestId": "r" * 24})["ok"])
+        self.assertEqual(self.client.calls[-1][1]["requestId"], "r" * 24)
+        self.assertTrue(self.invoke("lighting_stop")["ok"])
+    def test_natural_request_invalid_unknown_and_storage_failure_never_resubmit(self):
+        self.begin()
+        for args in [{}, {"prompt": " "}, {"prompt": 7}, {"prompt": "é" * 2049}, {"prompt": "ok", "leaseId": "forged"}]:
+            self.assertFalse(self.invoke("lighting_request", args)["ok"])
+        original = self.client.post
+        def lose_reply(path, body):
+            result = original(path, body)
+            if path == "apply":
+                raise OSError("private upstream sentinel")
+            return result
+        self.client.post = lose_reply
+        failed = self.invoke("lighting_request", {"prompt": "Make a gentle wave"})
+        self.assertFalse(failed["ok"])
+        self.assertNotIn("sentinel", json.dumps(failed))
+        self.assertFalse(self.invoke("lighting_request", {"prompt": "Make a gentle wave"})["ok"])
+        self.assertEqual([p for p, _ in self.client.calls].count("apply"), 1)
+        self.assertTrue(self.invoke("lighting_state")["ok"])
+        self.assertTrue(self.invoke("lighting_stop")["ok"])
+        # A fresh message still has state/Stop even if the durable claim cannot be saved.
+        self.session["HERMES_SESSION_MESSAGE_ID"] = "1234567891.000001"
+        self.bridge.claim_event = lambda _: (_ for _ in ()).throw(OSError("disk failed"))
+        self.begin("disk-failed")
+        self.assertFalse(self.invoke("lighting_request", {"prompt": "Gentle wave"}, "disk-failed")["ok"])
+        self.assertTrue(self.invoke("lighting_state", turn="disk-failed")["ok"])
+        self.assertTrue(self.invoke("lighting_stop", turn="disk-failed")["ok"])
     def test_wholly_unseen_old_message_is_refused_before_receipt_or_network(self):
         self.wall_now += 121
         self.begin()
@@ -117,7 +153,7 @@ class PluginTests(unittest.TestCase):
                     args = {"command": COMMAND} if name == "lighting_apply" else {}
                     result = bridge.around_tool(tool_name=name, args=args, session_id="session-one", turn_id="turn-one",
                                                 next_call=lambda a: bridge.handle(name, a))
-                    self.assertEqual(json.loads(result)["ok"], allowed)
+                    self.assertEqual(json.loads(result)["ok"], allowed and name != "lighting_request")
                 self.assertEqual([p for p, _ in client.calls], ["lease", "state", "apply", "stop"] if allowed else [])
     def test_elapsed_message_cannot_refresh_via_continuation_new_runtime_or_restart(self):
         self.begin()
@@ -265,14 +301,16 @@ class PluginTests(unittest.TestCase):
             with self.subTest(url=url), self.assertRaises(ValueError):
                 plugin.Client(url, CONFIG["LIGHTESOTA_GISKARD_TOKEN"])
         self.assertIsNone(plugin.NoRedirect().redirect_request(None, None, 302, "", {}, "https://elsewhere.test"))
-    def test_register_exposes_only_three_narrow_tools_and_two_middlewares(self):
+    def test_register_exposes_only_four_narrow_tools_and_two_middlewares(self):
         class Context:
             def __init__(self): self.tools=[]; self.middleware=[]
             def register_tool(self, **kwargs): self.tools.append(kwargs)
             def register_middleware(self, kind, fn): self.middleware.append(kind)
         ctx = Context()
         plugin.register(ctx)
-        self.assertEqual({t["name"] for t in ctx.tools}, {"lighting_state", "lighting_apply", "lighting_stop"})
+        self.assertEqual({t["name"] for t in ctx.tools}, {"lighting_state", "lighting_apply", "lighting_stop", "lighting_request"})
+        manifest_tools = {line.strip()[2:] for line in (ROOT / "plugin.yaml").read_text().splitlines() if line.strip().startswith("- lighting_")}
+        self.assertEqual(manifest_tools, {t["name"] for t in ctx.tools})
         self.assertEqual(ctx.middleware, ["llm_request", "tool_execution"])
         for t in ctx.tools:
             self.assertNotIn("identity", json.dumps(t["schema"]))

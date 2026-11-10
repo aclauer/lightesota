@@ -4,7 +4,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { GiskardConnector, ReceiptLedger, RelayConnectionError, RelayGate, connectorConfig } from "../integrations/giskard-relay.js";
+import https from "node:https";
+import type http from "node:http";
+import { EventEmitter } from "node:events";
+import { GiskardConnector, ReceiptLedger, RelayConnectionError, RelayTransportError, RelayGate, connectorConfig, cloudTransport } from "../integrations/giskard-relay.js";
 
 const { Relay } = await import(new URL("../../../integrations/giskard-relay/relay.js", import.meta.url).href);
 const { Store } = await import(new URL("../../../integrations/giskard-relay/test/support.js", import.meta.url).href);
@@ -85,6 +88,81 @@ test("startup transport failure recovers with backoff and a new incarnation with
   await assert.doesNotReject(connector.start());
   assert.equal(sessions.length, 2); assert.notEqual(sessions[0], sessions[1]);
   assert.deepEqual(delays, [1000]);
+});
+
+test("only network events classify as lost ACKs; HTTP, malformed and oversized replies stay distinct", async t => {
+  let mode = "";
+  t.mock.method(https, "request", (_url: any, _options: any, respond: any) => {
+    const request = new EventEmitter() as http.ClientRequest;
+    request.end = () => {
+      queueMicrotask(() => {
+        if (mode === "network") { request.emit("error", new Error("synthetic private text")); return; }
+        const response = new EventEmitter() as http.IncomingMessage;
+        response.statusCode = ["http_aborted", "http_request_error", "unauthorized", "invalid_request", "outcome_unknown"].includes(mode) ? 503 : mode === "redirect" ? 302 : 200;
+        response.headers = { "content-type": mode === "content_type" ? "text/plain" : "application/json", ...(mode === "encoded" ? { "content-encoding": "gzip" } : {}) };
+        let destroyed = false;
+        response.destroy = () => { destroyed = true; response.emit("aborted"); return response; };
+        respond(response); if (destroyed) return;
+        if (mode === "aborted" || mode === "http_aborted") { response.emit("aborted"); return; }
+        if (mode === "http_request_error") { request.emit("error", new Error("synthetic private text")); return; }
+        if (mode === "response_error") { response.emit("error", new Error("synthetic private text")); return; }
+        response.emit("data", mode === "oversized" ? Buffer.alloc(65537) : Buffer.from(mode === "json" ? "invalid-json" : JSON.stringify({ ok: false, code: mode })));
+        if (!destroyed) response.emit("end");
+      });
+      return request;
+    };
+    return request;
+  });
+  const cloud = cloudTransport({ origin: "https://synthetic.invalid", token: "unused", backendToken: "unused", port: 8787, dataDir: "unused" });
+  for (mode of ["network", "aborted", "response_error", "http_aborted", "http_request_error", "redirect", "content_type", "encoded", "oversized", "json", "unauthorized", "invalid_request", "outcome_unknown"]) {
+    const transport = ["network", "aborted", "response_error"].includes(mode);
+    await assert.rejects(cloud("result", {}, new AbortController().signal), error => {
+      assert.equal(error instanceof RelayTransportError, transport, mode);
+      if (["unauthorized", "invalid_request", "outcome_unknown"].includes(mode)) assert.equal((error as RelayConnectionError).code, mode);
+      assert.ok(!(error as Error).message.includes("synthetic private text"));
+      return true;
+    });
+  }
+});
+
+test("lost ACK retention respects local expiry, shutdown, poll validation and definite result errors", async t => {
+  let timedOut: AbortController | undefined;
+  const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+  t.mock.method(AbortSignal, "timeout", (ms: number) => timedOut && ms === 1000 ? timedOut.signal : realTimeout(ms));
+  for (const mode of ["timeout", "local_expiry", "shutdown", "poll_expired", "poll_invalid", "result_expired", "unauthorized", "invalid_request", "mailbox_invalid", "outcome_unknown", "unclassified"]) {
+    timedOut = mode === "timeout" ? new AbortController() : undefined;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "relay-ack-boundary-")); t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const who = { identity: { teamId: "TTEST", channelId: "CTEST", userId: "UTEST", turnId: "stop" } }, id = "d".repeat(64);
+    let now = 100000, polls = 0, uploads = 0, effects = 0, sessions = 0;
+    const delays: number[] = [], gate = new RelayGate(() => now);
+    const connector = new GiskardConnector({ origin: "https://synthetic.invalid", token: "unused", backendToken: "unused", port: 8787, dataDir: dir },
+      new ReceiptLedger(dir), gate, async route => {
+        if (route === "session") { sessions++; return { ok: true, ttl: 30000 }; }
+        if (route === "poll") {
+          if (++polls === 1) return { ok: true, ttl: 30000, job: { id, action: "stop", body: who, fence: 1, ttl: 3500 } };
+          if (mode === "poll_expired" || mode === "poll_invalid") throw new RelayConnectionError(mode === "poll_expired" ? "session_expired" : "invalid_request");
+          connector.stop(); return { ok: true, ttl: 30000, job: null };
+        }
+        uploads++;
+        if (mode === "timeout") { timedOut!.abort(); return { ok: true }; } // Transport settles after its deadline.
+        if (mode === "local_expiry") now += 30000;
+        if (mode === "shutdown") connector.stop();
+        if (["local_expiry", "shutdown", "poll_expired", "poll_invalid"].includes(mode)) throw new RelayTransportError();
+        if (mode === "unclassified") throw new Error("synthetic unclassified failure");
+        throw new RelayConnectionError(mode === "result_expired" ? "expired" : mode);
+      }, () => now, async (action, data, _signal, dispatch) => {
+        gate.consume(dispatch, action, data); effects++; return { status: 200, raw: Buffer.from('{"ok":true}') };
+      }, async ms => { delays.push(ms); now += ms; if (ms >= 1000) connector.stop(); });
+    const terminal = ["poll_invalid", "unauthorized", "invalid_request", "mailbox_invalid"].includes(mode);
+    if (terminal) await assert.rejects(connector.start(), RelayConnectionError);
+    else await connector.start();
+    assert.equal(effects, 1); assert.equal(uploads, 1); assert.equal(sessions, 1);
+    assert.throws(() => gate.consume(id, "stop", who));
+    const polledAgain = ["timeout", "poll_expired", "poll_invalid", "result_expired"].includes(mode);
+    assert.equal(polls, polledAgain ? 2 : 1, mode);
+    assert.deepEqual(delays, mode === "poll_expired" ? [100, 1000] : ["timeout", "poll_invalid", "result_expired"].includes(mode) ? [100]
+      : ["local_expiry", "outcome_unknown", "unclassified"].includes(mode) ? [1000] : [], mode);
+  }
 });
 
 test("pending first initialization survives process restart; confirmed empty ledger never recreates a lost mailbox", async t => {

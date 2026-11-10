@@ -3,14 +3,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
+import https from "node:https";
+import { EventEmitter } from "node:events";
 import { test, type TestContext } from "node:test";
 import express from "express";
 import { config } from "../config.js";
 import { defaultRig, defaultSettings } from "../defaults.js";
 import { Library } from "../library.js";
 import { ShowController } from "../show.js";
+import { AgentService } from "../agent/agent.js";
 import { createGiskardRouter } from "./giskard.js";
-import { GiskardConnector, ReceiptLedger, RelayConnectionError, RelayGate, backendTransport } from "../integrations/giskard-relay.js";
+import { GiskardConnector, ReceiptLedger, RelayConnectionError, RelayGate, backendTransport, cloudTransport } from "../integrations/giskard-relay.js";
 
 // The deployable relay is intentionally a separate JavaScript package, with no HA SDK dependency.
 const { handler } = await import(new URL("../../../integrations/giskard-relay/http.js", import.meta.url).href);
@@ -40,12 +43,15 @@ async function endpoint(t: TestContext, handle: http.RequestListener) {
 }
 
 async function harness(t: TestContext, hook?: (action: string, deliver: () => Promise<any>) => Promise<any>, timing?: { now: () => number; sleep: (ms: number, signal: AbortSignal) => Promise<void> },
-  cloudHook?: (route: string, data: any, deliver: () => Promise<any>) => Promise<any>) {
+  cloudHook?: (route: string, data: any, deliver: () => Promise<any>) => Promise<any>, inference?: typeof fetch) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "giskard-bridge-")); config.dataDir = directory;
   const library = new Library(), rig = defaultRig(), settings = defaultSettings();
   const show = new ShowController(library, () => rig, () => settings); show.engine.setRig(rig);
   const gate = new RelayGate(timing?.now), app = express(); let stops = 0;
-  const ctx = { show, rigFile: { get: () => rig }, agent: { cancelAll() { stops++; } } };
+  if (inference) { fs.mkdirSync(path.join(directory, "agent")); fs.mkdirSync(path.join(directory, "patterns")); }
+  const agent = inference ? new AgentService({ library, show, getRig: () => rig, getSettings: () => settings,
+    onPatternSaved: (id, live) => { if (live !== false) show.patternUpdated(id); } }, () => {}, { hermes: { fetch: inference } }) : { cancelAll() { stops++; } };
+  const ctx = { show, rigFile: { get: () => rig }, agent };
   app.use("/api/integrations/giskard", createGiskardRouter(ctx, { relayGate: gate, now: timing?.now, audit() {}, policy: { preview: true, commissioned: false },
     env: { LIGHTESOTA_GISKARD_ENABLED: "1", LIGHTESOTA_GISKARD_TOKEN: token, LIGHTESOTA_GISKARD_TEAM_ID: env.GISKARD_RELAY_TEAM_ID,
       LIGHTESOTA_GISKARD_CHANNEL_ID: env.GISKARD_RELAY_CHANNEL_ID, LIGHTESOTA_GISKARD_USER_IDS: env.GISKARD_RELAY_USER_IDS } }));
@@ -68,8 +74,45 @@ async function harness(t: TestContext, hook?: (action: string, deliver: () => Pr
   for (let n = 0; n < 100 && !store.value?.session; n++) await new Promise(resolve => setTimeout(resolve, 10));
   assert.ok(store.value?.session);
   const call = (action: string, data: unknown) => relay.call({ path: `/api/integrations/giskard/${action}`, body: data });
-  return { call, counts, show, gate, store, backend, stops: () => stops, connector, running, directory, core: new Relay(store, timing?.now) };
+  return { call, counts, show, library, gate, store, backend, stops: () => stops, connector, running, directory, core: new Relay(store, timing?.now) };
 }
+
+test(`natural request bridge (${sockets ? "loopback sockets" : "Node HTTP streams"}): acceptance, owned status, real agent tools and Stop`, async t => {
+  const reply = (name?: string, input?: unknown) => new Response([
+    `data: ${JSON.stringify({ choices: [{ index: 0, delta: name ? { tool_calls: [{ index: 0, id: "tool_one", type: "function", function: { name, arguments: JSON.stringify(input) } }] } : { content: "Applied; physical output unverified." }, finish_reason: null }] })}\n\n`,
+    `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: name ? "tool_calls" : "stop" }] })}\n\n`, "data: [DONE]\n\n",
+  ].join(""), { headers: { "content-type": "text/event-stream" } });
+  let finish!: (value: Response) => void, round = 0;
+  const h = await harness(t, undefined, undefined, undefined, async (_url, init) => {
+    round++;
+    if (round === 1 || round === 4) return new Promise(resolve => { finish = resolve; });
+    if (round === 2) {
+      const request = JSON.parse(String(init?.body)), saved = JSON.parse(request.messages.findLast((m: any) => m.role === "tool").content);
+      return reply("apply_pattern", { id: saved.id, params: null, crossfadeMs: 0 });
+    }
+    return reply();
+  });
+  const who = body("natural-one"), lease = await h.call("lease", who);
+  const command = { kind: "agent_request", prompt: "Make the lights shift from left to right" };
+  const accepted = await h.call("apply", { ...who, leaseId: lease.body.leaseId, command });
+  assert.equal(accepted.status, 202, JSON.stringify(accepted.body));
+  assert.equal(accepted.body.request.status, "accepted");
+  assert.equal((await h.call("state", { ...who, requestId: accepted.body.request.id })).body.request.status, "running");
+  finish(reply("write_pattern", { id: null, source: 'export default { name: "Slack wave", render(ctx) { ctx.fill("#00ffff", {dim: .2}); } };' }));
+  await new Promise(resolve => setImmediate(resolve));
+  const completed = await h.call("state", { ...who, requestId: accepted.body.request.id });
+  assert.equal(completed.body.request.status, "completed");
+  assert.ok(h.library.getPattern(h.show.state.patternId!));
+  assert.equal((await h.call("apply", { ...who, leaseId: lease.body.leaseId, command })).status, 409);
+  const next = body("natural-two"), nextLease = await h.call("lease", next);
+  assert.equal((await h.call("apply", { ...next, leaseId: nextLease.body.leaseId, command })).status, 202);
+  assert.equal((await h.call("stop", body("stop-natural"))).status, 200);
+  const before = structuredClone(h.show.state);
+  finish(reply("set_master", { level: 1 })); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(h.show.state, before);
+  assert.equal((await h.call("state", next)).body.request.status, "cancelled");
+  assert.equal(h.counts.apply, 2);
+});
 
 test(`vertical bridge (${sockets ? "loopback sockets" : "Node HTTP streams"}): actual router state, lease, apply, Stop and no replay`, async t => {
   const h = await harness(t); const who = body("one");
@@ -152,6 +195,62 @@ function manualTime() {
   return { now: () => time, sleep, advance(ms: number) { time += ms; }, ready: () => nextPark,
     async tick() { nextPark = new Promise(resolve => { parked = resolve; }); wake(); await nextPark; } };
 }
+
+test("lost result ACK abandons only that transfer; following state uses the original session without replay", async t => {
+  // Exercise the real connector's transport error boundary without opening a socket.
+  t.mock.method(https, "request", () => {
+    const request = new EventEmitter() as http.ClientRequest;
+    request.end = () => { queueMicrotask(() => request.emit("error", new Error("synthetic lost ACK"))); return request; };
+    return request;
+  });
+  const lostReply = cloudTransport({ origin: "https://synthetic.invalid", token: "unused", backendToken: "unused", port: 8787, dataDir: "unused" });
+  for (const mode of ["committed", "partial", "delayed"]) {
+    const clock = manualTime(), sessions: string[] = [], uploads: any[] = [];
+    let lose = true, delayed!: () => Promise<any>;
+    const h = await harness(t, async (action, deliver) => {
+      const reply = await deliver();
+      return mode === "partial" && action === "stop" ? { ...reply, raw: Buffer.from(JSON.stringify({ ...reply.body, padding: "x".repeat(6000) })) } : reply;
+    }, clock, async (route, data, deliver) => {
+      if (route === "session") sessions.push(data.session);
+      if (route === "result") uploads.push(data);
+      if (route === "result" && lose) {
+        lose = false;
+        if (mode === "delayed") delayed = deliver;
+        else await deliver();
+        return lostReply(route, data, new AbortController().signal);
+      }
+      return deliver();
+    });
+    await clock.ready();
+    const stopped = await h.core.admit("stop", body("stop-once")); await clock.tick();
+    assert.equal(h.stops(), 1);
+    assert.throws(() => h.gate.consume(stopped.id, "stop", body("stop-once")), "effect permit is closed before result upload");
+    const result = await h.core.take(stopped.id);
+    if (mode === "committed") assert.equal(result.status, 200, "caller can consume the committed Stop despite lost connector ACK");
+    else assert.equal(result, null, "an incomplete transfer cannot acknowledge Stop");
+    const state = await h.core.admit("state", body("after-stop")); await clock.tick();
+    assert.equal(sessions.length, 1, "a lost result ACK must not replace a still-valid fenced session");
+    assert.equal((await h.core.take(state.id)).status, 200);
+    assert.deepEqual(h.counts, { stop: 1, state: 1 });
+    assert.deepEqual(uploads.filter(u => u.id === stopped.id).map(u => u.index), [0], "neither a retry nor a later chunk may be sent");
+    assert.ok(uploads.every(u => u.session === sessions[0]));
+    if (mode === "partial") {
+      clock.advance(5500);
+      assert.equal((await h.core.take(stopped.id)).body.code, "outcome_unknown");
+    }
+    if (mode === "delayed") {
+      clock.advance(5500);
+      assert.equal((await h.core.take(stopped.id)).body.code, "outcome_unknown"); // Free the expired Stop slot through normal consumption.
+      const newer = await h.core.admit("stop", body("newer-stop")); await clock.tick();
+      assert.equal((await h.core.take(newer.id)).status, 200); assert.equal(h.stops(), 2);
+      const late = await delayed();
+      assert.equal(late.status, 409); assert.equal(late.body.code, "expired", "a delayed old result cannot cross a newer Stop fence");
+    }
+    h.connector.stop(); await h.running;
+    const persisted = new ReceiptLedger(h.directory);
+    assert.equal(persisted.claim("stop", body("stop-once")), false); persisted.close();
+  }
+});
 
 test("outage after ambiguous apply result rotates session and never retries work; expired old lease/Stop receipts survive redeploy", async t => {
   const clock = manualTime(), sessions: string[] = [];

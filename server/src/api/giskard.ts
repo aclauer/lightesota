@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { findProfile, washFixtures, washSide, type FixtureOverride, type Rig, type WashMode } from "../../../shared/src/index.js";
 import type { ShowController } from "../show.js";
+import type { AgentService } from "../agent/agent.js";
 import { OUTPUT_COMMISSIONED, PREVIEW } from "../output/policy.js";
 import { isLoopback } from "./auth.js";
 import { finite, idValue, object, validateOverride } from "./validate.js";
@@ -13,20 +14,22 @@ const WINDOW_MS = 60_000;
 type Action = "state" | "lease" | "apply" | "stop";
 interface Identity { teamId: string; channelId: string; userId: string; turnId: string; }
 type Command =
+  | { kind: "agent_request"; prompt: string }
   | { kind: "set_lights"; fixtureIds: string[]; brightness: number; color?: string }
   | { kind: "wash_mode"; fixtureIds: string[]; mode: WashMode; sensitivity?: number }
   | { kind: "quick_look"; fixtureIds: string[]; lookId: "warm-arrival" | "cyan-magenta" | "calm-blue" };
-interface Lease { leaseId: string; identityKey: string; generation: number; expiresAt: number; used: boolean; }
+interface Lease { leaseId: string; identityKey: string; generation: number; expiresAt: number; until: number; used: boolean; }
 interface Audit { actor: Identity; command: string; targetIds: string[]; generation: number; result: string; }
 interface Context {
   show: ShowController;
   rigFile: { get(): Rig };
-  agent: { cancelAll(): void };
+  agent: { cancelAll(): void } & Partial<Pick<AgentService, "requestLighting" | "lightingRequestStatus">>;
 }
 /** Dependency injection is for isolated tests; the mounted router always uses process policy. */
 export interface GiskardOptions {
   env?: NodeJS.ProcessEnv;
   now?: () => number;
+  monotonicNow?: () => number;
   policy?: { preview: boolean; commissioned: boolean };
   audit?: (event: Audit) => void;
   maxLeases?: number;
@@ -59,6 +62,8 @@ export function createGiskardApi(ctx: Context, options: GiskardOptions = {}) {
   const configured = settings(options.env ?? process.env);
   const policy = { ...(options.policy ?? { preview: PREVIEW, commissioned: OUTPUT_COMMISSIONED }) };
   const now = options.now ?? Date.now;
+  const monotonicNow = options.monotonicNow ?? (() => performance.now());
+  const ownerKey = (i: Identity) => digest(JSON.stringify([i.teamId, i.channelId, i.userId])).toString("hex");
   const audit = options.audit ?? ((event: Audit) => console.info(JSON.stringify({ integration: "giskard", ...event })));
   const maxLeases = options.maxLeases ?? 10_000;
   function relayEffect(action: Action, req: Request) {
@@ -147,6 +152,11 @@ export function createGiskardApi(ctx: Context, options: GiskardOptions = {}) {
     try {
       const input = object(raw, "command");
       const kind = input.kind;
+      if (kind === "agent_request") {
+        const v = exact(input, ["kind", "prompt"], "command");
+        if (typeof v.prompt !== "string" || !v.prompt.trim() || Buffer.byteLength(v.prompt) > 4096) fail(400, "invalid_command", "Prompt must be nonempty and at most 4096 UTF-8 bytes");
+        return { kind, prompt: v.prompt };
+      }
       const fields = kind === "set_lights" ? ["kind", "fixtureIds", "brightness", "color"] : kind === "wash_mode" ? ["kind", "fixtureIds", "mode", "sensitivity"] : kind === "quick_look" ? ["kind", "fixtureIds", "lookId"] : null;
       if (!fields) fail(400, "invalid_command", "Unsupported command kind");
       const v = exact(input, fields, "command");
@@ -168,10 +178,10 @@ export function createGiskardApi(ctx: Context, options: GiskardOptions = {}) {
     } catch (e) { if (e instanceof ApiError) throw e; return fail(400, "invalid_command", "Invalid command fields or values"); }
   }
   function usable(lease: Lease | undefined, identity: Identity): Lease {
-    if (!lease || lease.identityKey !== actorKey(identity) || lease.used || now() >= lease.expiresAt || lease.generation !== ctx.show.state.generation) fail(409, "invalid_lease", "Lease is unknown, expired, consumed or stale; a new trusted user turn is required");
+    if (!lease || lease.identityKey !== actorKey(identity) || lease.used || now() >= lease.expiresAt || monotonicNow() >= lease.until || lease.generation !== ctx.show.state.generation) fail(409, "invalid_lease", "Lease is unknown, expired, consumed or stale; a new trusted user turn is required");
     return lease;
   }
-  function prepareApply(command: Command): () => void {
+  function prepareApply(command: Exclude<Command, { kind: "agent_request" }>): () => void {
     if (command.kind === "quick_look") return () => ctx.show.quickLook(command.lookId, command.fixtureIds);
     if (command.kind === "wash_mode") return () => ctx.show.setWash(command.fixtureIds, { mode: command.mode, ...(command.sensitivity === undefined ? {} : { sensitivity: command.sensitivity }) });
     const washIds = new Set(washFixtures(ctx.rigFile.get()).map((f) => f.id));
@@ -197,17 +207,21 @@ export function createGiskardApi(ctx: Context, options: GiskardOptions = {}) {
     try {
       if (Buffer.byteLength(JSON.stringify(req.body) ?? "") > BODY_LIMIT) fail(413, "body_too_large", "JSON body exceeds 8192 bytes");
       let body: Record<string, unknown>;
-      try { body = exact(req.body, action === "apply" ? ["identity", "leaseId", "command"] : ["identity"], "request"); identity = identify(body.identity); }
+      try { body = exact(req.body, action === "apply" ? ["identity", "leaseId", "command"] : action === "state" ? ["identity", "requestId"] : ["identity"], "request"); identity = identify(body.identity); }
       catch (e) { if (e instanceof ApiError) throw e; fail(400, "invalid_request", "Expected a JSON object with a trusted identity"); }
       limit(`${identity!.userId}:${action === "stop" ? "stop" : "ordinary"}`, action === "stop" ? 30 : 60);
-      if (action === "state") { relayEffect(action, req); return res.json({ ok: true, state: state() }); }
+      if (action === "state") {
+        if (body!.requestId !== undefined && (typeof body!.requestId !== "string" || !/^[A-Za-z0-9_-]{24}$/.test(body!.requestId))) fail(400, "invalid_request", "Invalid requestId");
+        relayEffect(action, req);
+        return res.json({ ok: true, state: state(), request: ctx.agent.lightingRequestStatus?.(ownerKey(identity!), body!.requestId as string | undefined) ?? { status: "unknown" } });
+      }
       if (action === "lease") {
         relayEffect(action, req);
         const key = actorKey(identity!); let lease = turns.get(key);
         if (lease) lease = usable(lease, identity!);
         else {
           if (turns.size >= maxLeases) fail(503, "lease_capacity", "Lease ledger is full; operator maintenance is required");
-          lease = { leaseId: randomBytes(32).toString("base64url"), identityKey: key, generation: ctx.show.state.generation, expiresAt: now() + LEASE_MS, used: false };
+          lease = { leaseId: randomBytes(32).toString("base64url"), identityKey: key, generation: ctx.show.state.generation, expiresAt: now() + LEASE_MS, until: monotonicNow() + LEASE_MS, used: false };
           turns.set(key, lease); leases.set(lease.leaseId, lease);
         }
         report(identity!, "lease", [], "ok");
@@ -224,18 +238,24 @@ export function createGiskardApi(ctx: Context, options: GiskardOptions = {}) {
       if (typeof body!.leaseId !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body!.leaseId)) fail(400, "invalid_request", "Invalid leaseId");
       if (!policy.preview && !policy.commissioned) fail(503, "uncommissioned", "Output is not commissioned; state and Stop remain available");
       if (ctx.show.state.blackout || ctx.show.state.released) fail(409, "output_blocked", "Output is blacked out or released; an operator must resolve it");
-      const apply = prepareApply(command);
+      const apply = command.kind === "agent_request" ? undefined : prepareApply(command);
       const lease = usable(leases.get(body!.leaseId as string), identity!);
       // Consume before any effect; errors cannot authorize a duplicate. No await or callback between
       // the final generation assertion and the synchronous ShowController mutation batch.
       relayEffect(action, req);
       lease.used = true;
       ctx.show.assertGeneration(lease.generation);
-      apply();
+      if (command.kind === "agent_request") {
+        if (!ctx.agent.requestLighting) fail(503, "agent_unavailable", "Lighting agent is unavailable");
+        const request = ctx.agent.requestLighting(command.prompt, ownerKey(identity!), lease.generation, Math.min(lease.expiresAt - now(), lease.until - monotonicNow()));
+        report(identity!, command.kind, [], "accepted");
+        return res.status(202).json({ ok: true, command: { kind: command.kind }, request, preview: policy.preview, physicalOutput: "unverified" });
+      }
+      apply!();
       report(identity!, command.kind, command.fixtureIds, "ok");
       return res.json({ ok: true, command, state: state(), preview: policy.preview, physicalOutput: "unverified" });
     } catch (e) {
-      if (identity) report(identity, command?.kind ?? action, command?.fixtureIds ?? [], e instanceof ApiError ? e.code : "operation_failed");
+      if (identity) report(identity, command?.kind ?? action, command && "fixtureIds" in command ? command.fixtureIds : [], e instanceof ApiError ? e.code : "operation_failed");
       return error(res, e);
     }
   }

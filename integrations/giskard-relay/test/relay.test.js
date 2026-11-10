@@ -1,13 +1,31 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEDUP_MS, Relay } from '../relay.js';
-import { hash, identityKey } from '../protocol.js';
+import { admission, configuration, hash, identityKey } from '../protocol.js';
 import { handler } from '../http.js';
 import { Conflict } from '../blob.js';
 import { body, env, identity, memoryHttp, session, Store } from './support.js';
 
 async function setup() { let now = 100000; const store = new Store(), relay = new Relay(store, () => now); await relay.connector('session', { session, initialize: true }); return { store, relay, advance: n => { now += n; } }; }
 const result = (id, payload, status = 200) => ({ session, id, index: 0, total: 1, status, data: Buffer.from(JSON.stringify(payload)).toString('base64') });
+
+test('natural command is bounded and 202 means only backend-acknowledged acceptance', async () => {
+  const { relay } = await setup(), who = body('natural'), config = configuration(env);
+  const lease = await relay.admit('lease', who); await relay.connector('poll', { session });
+  await relay.connector('result', result(lease.id, { ok: true, leaseId: 'a'.repeat(43) })); await relay.take(lease.id);
+  const request = { ...who, leaseId: 'a'.repeat(43), command: { kind: 'agent_request', prompt: 'Shift the lights left to right' } };
+  admission('apply', request, config);
+  for (const command of [{ ...request.command, prompt: '' }, { ...request.command, prompt: 'é'.repeat(2049) }, { ...request.command, role: 'admin' }]) assert.throws(() => admission('apply', { ...request, command }, config));
+  assert.throws(() => admission('state', { ...who, requestId: '../conversation' }, config));
+  const job = await relay.admit('apply', request); await relay.connector('poll', { session });
+  const accepted = { ok: true, request: { id: 'r'.repeat(24), status: 'accepted' }, physicalOutput: 'unverified' };
+  await relay.connector('result', result(job.id, accepted, 202));
+  assert.deepEqual(await relay.take(job.id), { status: 202, body: accepted });
+  await assert.rejects(relay.admit('apply', request));
+  const stop = await relay.admit('stop', body('not-an-ack')); await relay.connector('poll', { session });
+  await relay.connector('result', result(stop.id, accepted, 202));
+  assert.equal((await relay.take(stop.id)).status, 503, 'acceptance can never acknowledge Stop');
+});
 
 test('auth, allowlist, production gate and exact raw paths precede all storage', async () => {
   const store = new Store(), handle = handler({ store, env });

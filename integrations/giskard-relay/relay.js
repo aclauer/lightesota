@@ -133,13 +133,15 @@ export class Relay {
         const raw = Buffer.concat(j.parts.map(p => Buffer.from(p, 'base64')));
         let result; try { result = JSON.parse(raw.toString('utf8')); } catch { throw new Refused('invalid_result'); }
         check(exact(result, Object.keys(result ?? {})) && typeof result.ok === 'boolean', 'invalid_result', 503);
-        if (body.status !== 200 || result.ok !== true) result = { ok: false, code: 'backend_refused', error: 'Lighting backend refused or could not confirm the operation; do not retry this turn' };
+        const accepted = body.status === 202 && j.action === 'apply' && j.body?.command?.kind === 'agent_request'
+          && result.request?.status === 'accepted' && typeof result.request.id === 'string' && /^[A-Za-z0-9_-]{24}$/.test(result.request.id);
+        if (body.status !== 200 && !accepted || result.ok !== true) result = { ok: false, code: 'backend_refused', error: 'Lighting backend refused or could not confirm the operation; do not retry this turn' };
         if (j.action === 'lease' && result.ok) {
           check(typeof result.leaseId === 'string' && /^[A-Za-z0-9_-]{43}$/.test(result.leaseId) && m.bindings.length < 128, 'invalid_result', 503);
           m.bindings.push({ key: j.key, lease: hash(result.leaseId), fence: m.fence, until: now + 120000 });
         }
         delete j.body; delete j.parts;
-        j.phase = 'done'; j.result = { status: result.ok ? 200 : 503, body: result };
+        j.phase = 'done'; j.result = { status: result.ok ? body.status : 503, body: result };
       }
       return { ok: true };
     }, signal, route === 'session' && body.initialize === true);
