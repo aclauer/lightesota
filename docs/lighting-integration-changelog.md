@@ -1,5 +1,38 @@
 # Lighting integration changelog
 
+## 2026-11-09 — shipped and exercised from native Slack
+
+In `#giskard`, authorized teammates can now mention Giskard with a look such as
+“Make the lights shift smoothly from left to right across the washes and strips,
+in blue and cyan at 15% brightness.” Giskard submits it to Lightesota's existing
+lighting agent; accepted/running is distinct from completed. “Stop the lights”
+uses the independent Stop path. The human UI remains available on the office
+network at http://10.10.0.192:8787/. Neither production nor its connector depends
+on a laptop.
+
+HA is running `23ec0ddeaa51469f2c007fdb8c15e1846cb62464`, including the small color
+correction below. Its 186 source files matched the release and all 70 saved user
+files present at that upgrade remained byte-exact. Vercel and the native Giskard
+plugin run the compatible `37ee41819604a3735612e1220b482ab866e99559` protocol release;
+the seven deployed relay files and both installed plugin files were read back exactly.
+Andrew's UI and existing data were preserved; the live agent created only new patterns
+and conversations.
+
+Fresh native-human Slack acceptance passed: selected wash/strip amber at 10%, Stop
+and immediate state read, then a new natural-language blue/cyan sweep at 15% and a
+final Stop/state read. The request reported completed with successful `write_pattern`
+and `apply_pattern`. Live output showed changing blue/cyan values on all four washes;
+the Hue bridge reported all five strips reachable and on. After final Stop, all wash
+frames and laser/haze channels were zero and the Hue bridge reported all five strips
+off. This verifies commands, output packets and device readback, not optical appearance
+or laser placement. Ordinary output remains enabled, the show is left stopped, lasers
+remain disarmed and haze remains disabled. Existing manual laser arming/Follow and
+geometry/strobe safeguards are unchanged.
+
+The final color correction passed 173 server and 15 web tests, all workspace typechecks
+and the application build; the coordinated release's relay/plugin/HA/runtime checks
+are recorded below. No remaining software launch blocker was observed in these tests.
+
 ## 2026-11-09 — live pattern color correction
 
 The first live natural-language sweep reached the agent and started its new pattern,
@@ -11,7 +44,7 @@ reproduced black output before the fix and verifies finite, moving blue/cyan out
 The full application tests, typechecks and build passed. No transport, permissions,
 provider, fixture settings or saved patterns are changed by this correction.
 
-## 2026-11-09 — natural-language lighting requests (source; parent rollout pending)
+## 2026-11-09 — natural-language lighting implementation
 
 Giskard gains `lighting_request`: teammates can ask for a moving look without supplying
 fixture or preset IDs. The existing Lightesota lighting agent creates new sandboxed
@@ -35,8 +68,8 @@ PluginManager and both middleware chains loaded all four tools in an isolated ho
 acceptance versus completion, shared one-attempt authority, status IDs and stale/missing
 Slack context were verified without changing the real Hermes configuration.
 
-These are software checks, not physical fixture observations. Coordinated HA/relay/plugin
-deployment and the live Slack lighting/Stop acceptance follow publication. The accepted
+These are software checks, not physical fixture observations. The subsequent coordinated
+HA/relay/plugin deployment and live Slack acceptance are recorded above. The accepted
 connector ACK recovery correction below is preserved.
 
 ## 2026-11-09 — connector recovery correction

@@ -5,14 +5,14 @@ This is an opt-in, authenticated gateway API over Lightesota's existing `ShowCon
 For company-cloud access to the HA-hosted app, the optional
 [Vercel ↔ HA mailbox connector](../integrations/giskard-relay/README.md) forwards only
 these four operations through outbound HA HTTPS and fixed numeric loopback dispatch.
-It uses three distinct credentials and grants no commissioning authority. Existing
-state/Stop live evidence is recorded in the changelog; natural-language rollout and
-physical acceptance remain parent-owned.
+It uses three distinct credentials and grants no commissioning authority. The office
+deployment and native Slack natural-language/action/Stop acceptance are recorded in
+the [changelog](lighting-integration-changelog.md), including device-readback limitations.
 Its optional `X-Lightesota-Relay-Dispatch` header can only tighten this API: a missing,
 expired or consumed connector permit rejects the effect at the router. Direct requests
 without that header retain the contract below. Raw path aliases and queries are rejected.
 
-**Keep physical output disabled until the independent HA/Lightesota DMX senders have been reduced to the verified single-sender arrangement.** Parent-recorded software acceptance is in the changelog. This natural-language patch does not establish deployment or physical readiness.
+**Before commissioning a deployment, keep physical output disabled until independent HA/Lightesota DMX senders have been reduced to the verified single-sender arrangement.** The office installation now has ordinary output enabled and was left stopped after acceptance. Haze remains disabled; laser arming and physical safety remain operator responsibilities. Device readback does not establish optical appearance or laser safety.
 
 ## Operator configuration
 
