@@ -1,5 +1,32 @@
 # Lighting integration changelog
 
+## 2026-11-09 — software live; physical output remains disabled
+
+Lightesota on Home Assistant now uses company-authorized DeepSeek Flash at maximum
+reasoning. Its actual app conversation completed `get_show_state` and a final answer.
+Giskard's three-tool lighting plugin is enabled in the hosted gateway; no general-purpose
+tools or unrelated source permissions were enabled. Production does not depend on a laptop.
+
+The relay representation fix is deployed. Real private-store tests passed for small and
+large JSON, exact original ETags, conditional writes, stale-write rejection and concurrent
+writers. The authenticated Giskard-host → Vercel → HA path passed state / Stop / state.
+A real authorized Slack mention also completed state and Stop, advancing the controller
+generation. Its immediate follow-up read failed closed; a later fresh Slack state request
+succeeded and confirmed that same stopped generation. This is a known intermittent
+availability limitation, not a claim that every request succeeds. Unauthenticated access
+returns HTTP 401. Requests with uncertain outcomes are not automatically replayed.
+
+Physical output and haze remain uncommissioned/disabled. No light-on or physical fixture
+acceptance was performed; ordinary-light Apply stays blocked until separate commissioning.
+Andrew's UI, scenes, patterns and saved data were not changed by these relay fixes.
+
+The serving deployment still includes a successful build-only storage probe, which is not
+an HTTP route or runtime import, plus rate-limited nonsecret diagnostics. Removing those
+requires a fresh Vercel identity verification; the optional cleanup was cancelled rather
+than interrupting the working deployment or blocking this software launch.
+
+The dated entries below retain the state of each earlier checkpoint.
+
 ## 2026-11-09 — live DeepSeek acceptance and relay representation fix pending cloud acceptance
 
 DeepSeek Flash completed a read-only `get_show_state` tool call and the final assistant

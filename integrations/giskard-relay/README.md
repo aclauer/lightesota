@@ -1,8 +1,13 @@
 # Giskard Vercel ↔ HA bridge
 
-Source for a purpose-specific lighting RPC mailbox. Live deployment, SDK/store acceptance,
-Slack acceptance and physical commissioning remain with the deployment owner. This is
-not a production-readiness claim. The HA app is the host; the laptop runs no connector daemon.
+Purpose-specific lighting RPC mailbox, deployed in Dimensional's Vercel project with the
+connector running inside Home Assistant. The laptop runs no connector daemon.
+
+The live private-store checks and hosted state / Stop / state sequence passed. Authorized
+Slack state and Stop also passed; one immediate follow-up state read failed closed, while
+a later fresh read confirmed the stopped generation. Intermittent availability remains a
+known limitation. Physical output is disabled and physical commissioning is separate.
+See the [dated rollout record](../../docs/lighting-integration-changelog.md) for exact scope.
 
 ```text
 Company Hermes Giskard (unchanged three tools)
@@ -84,7 +89,10 @@ Private uncached GETs request `accept-encoding: identity` through SDK 2.9.0's su
 `headers` option. CAS still forwards the unchanged ETag from that same body read.
 Parent's cloud probe reproduced compressed weak-tag CAS rejection for both larger JSON
 cases; identity reads returned the same content with strong tags matching creation PUTs.
-The identity-read cloud CAS probe and SFO1 live relay acceptance remain pending.
+The identity-read cloud CAS probe subsequently passed all three payload cases, including
+stale-write and concurrent-writer checks; synthetic objects were removed and absence
+verified. SFO1 runtime logs confirmed original strong tags and successful conditional
+writes. Hosted state / Stop / state passed; the Slack availability caveat above remains.
 
 For a parent-owned diagnostic deployment, temporarily set `GISKARD_RELAY_DIAGNOSTICS=1`
 in the protected production project configuration and inspect `giskard_relay_storage`
