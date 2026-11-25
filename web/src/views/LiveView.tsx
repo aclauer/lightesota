@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { useEffect, useState as useStateReact } from "react";
-import { Code2, Flashlight, Mic, MicOff, Moon, RotateCcw, Save, X } from "lucide-react";
-import { COORDINATED_SHOWS, findProfile, engineIndexOf, isLaserProfile, isHazeProfile, type FixtureOverride } from "@lightesota/shared";
+import { Code2, Mic, MicOff, Moon, RotateCcw, Save, X } from "lucide-react";
+import { COORDINATED_SHOWS, findProfile, isLaserProfile, isHazeProfile } from "@lightesota/shared";
 import { LasersCard } from "../components/LasersCard";
-import { WashesCard } from "../components/WashesCard";
+import { LightsCard } from "../components/LightsCard";
 import { HazeCard } from "../components/HazeCard";
 import { AgentPanel } from "./AgentView";
 import { useStore } from "../state/store";
 import { Stage } from "../components/Stage";
 import { ParamControls } from "../components/ParamControls";
 import { Modal } from "../components/Modal";
-import { hexToRgb01, rgb01ToHex, timeAgo } from "../lib/format";
+import { timeAgo } from "../lib/format";
 
 export function LiveView() {
   const rig = useStore((s) => s.rig)!;
@@ -45,7 +45,6 @@ export function LiveView() {
             {status?.control?.preview && <span className="pill warn">Preview · outputs vetoed</span>}
           </div>
           <div className="row">
-            {control && <button className="btn sm" title="Hold the current wash look, cancel automation, and disarm lasers" onClick={() => send({ type: "takeManualControl" })}>Take manual control</button>}
             {control && <button className="btn sm" onClick={() => setSaveOpen(true)}><Save /> Save scene</button>}
             {pattern && can("editor") && <button className="btn sm ghost" onClick={() => openEditor(pattern.id)}><Code2 /> Edit</button>}
           </div>
@@ -57,8 +56,8 @@ export function LiveView() {
         <RecentStrip />
       </div>
       <div className="side">
-        {selected ? <FixtureInspector id={selected} onClose={() => selectFixture(null)} /> : null}
-        <WashesCard />
+        {selected ? <OperatorFixtureNote id={selected} onClose={() => selectFixture(null)} /> : null}
+        <LightsCard />
         <div className="card">
           <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>Parameters</h3>
@@ -85,12 +84,6 @@ export function LiveView() {
             <input className="ctl accent" type="range" min={0} max={1} step={0.01} value={show.master} disabled={!control} onChange={(e) => send({ type: "setMaster", master: Number(e.target.value) })} aria-label="Master" />
           </div>
           <SleepTimer />
-          {Object.keys(show.overrides).length > 0 && control && (
-            <div className="row" style={{ marginTop: 8 }}>
-              <span className="pill warn">{Object.keys(show.overrides).length} fixture override{Object.keys(show.overrides).length > 1 ? "s" : ""}</span>
-              <button className="btn sm ghost" onClick={() => send({ type: "clearOverrides" })}>Clear</button>
-            </div>
-          )}
           {show.solo.length > 0 && control && (
             <div className="row" style={{ marginTop: 8 }}>
               <span className="pill warn">Solo: {show.solo.length}</span>
@@ -233,73 +226,19 @@ export function SaveSceneModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function FixtureInspector({ id, onClose }: { id: string; onClose: () => void }) {
+/** Lasers and the hazer are operator-only; the Lights card covers every other fixture. */
+function OperatorFixtureNote({ id, onClose }: { id: string; onClose: () => void }) {
   const rig = useStore((s) => s.rig)!;
-  const show = useStore((s) => s.show)!;
-  const send = useStore((s) => s.send);
-  const can = useStore((s) => s.can);
-  const frame = useStore((s) => s.frame);
   const f = rig.fixtures.find((x) => x.id === id);
-  if (!f) return null;
-  const control = can("guest");
-  const profile = findProfile(f.profileId, rig.customProfiles);
-  const idx = engineIndexOf(rig, f.id);
-  const c = idx >= 0 ? frame[idx] : undefined;
-  const ov: FixtureOverride | undefined = show.overrides[f.id];
-  const soloed = show.solo.includes(f.id);
-  const isColor = profile?.colorModel !== "dimmer";
-  if (f.profileId === "chauvet-slimpar-pro-h-12ch") {
-    return <div className="card fixture-inspector">
-      <div className="row" style={{ justifyContent: "space-between" }}><h2 style={{ margin: 0 }}>{f.name}</h2><button className="btn ghost icon sm" onClick={onClose} aria-label="Close fixture inspector"><X /></button></div>
-      <p className="hint">{profile?.name} · DMX {f.address}. Selected in Washes below. Modes and manual changes hold until released to the pattern.</p>
-    </div>;
-  }
-  if (isLaserProfile(profile) || isHazeProfile(profile)) {
-    return (
-      <div className="card fixture-inspector">
-        <div className="row" style={{ justifyContent: "space-between", marginBottom: 6 }}>
-          <div><h2 style={{ marginBottom: 0 }}>{f.name}</h2><div className="hint">{profile?.name ?? f.profileId}{f.address ? ` · DMX ${f.address}` : ""}</div></div>
-          <button className="btn ghost icon sm" onClick={onClose} aria-label="Close"><X /></button>
-        </div>
-        <p className="hint">Operator-only fixture. Patterns, overrides and flash never touch it; use the {isHazeProfile(profile) ? "Haze" : "Lasers"} card below.</p>
-      </div>
-    );
-  }
-  const setOv = (patch: Partial<FixtureOverride> | null) => send({ type: "setOverride", fixtureId: f.id, override: patch === null ? null : { ...ov, ...patch } });
+  const profile = f ? findProfile(f.profileId, rig.customProfiles) : undefined;
+  if (!f || !(isLaserProfile(profile) || isHazeProfile(profile))) return null;
   return (
     <div className="card fixture-inspector">
       <div className="row" style={{ justifyContent: "space-between", marginBottom: 6 }}>
-        <div><h2 style={{ marginBottom: 0 }}>{f.name}</h2><div className="hint">{profile?.name ?? f.profileId}{f.address ? ` · DMX ${f.address}` : ""}{f.hueLightId ? ` · Hue #${f.hueLightId}` : ""}</div></div>
+        <div><h2 style={{ marginBottom: 0 }}>{f.name}</h2><div className="hint">{profile?.name ?? f.profileId}{f.address ? ` · DMX ${f.address}` : ""}</div></div>
         <button className="btn ghost icon sm" onClick={onClose} aria-label="Close"><X /></button>
       </div>
-      <div className="chips" style={{ marginBottom: 10 }}>{f.tags.map((t) => <span key={t} className="pill">{t}</span>)}</div>
-      {c && <div className="row" style={{ marginBottom: 10 }}><span className="dot" style={{ width: 18, height: 18, background: `rgb(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)})`, opacity: 0.3 + c.dim * 0.7 }} /><span className="mono faint">{isColor ? `rgb ${Math.round(c.r * 255)} ${Math.round(c.g * 255)} ${Math.round(c.b * 255)}` : ""} dim {Math.round(c.dim * 100)}%</span></div>}
-      <div className="row" style={{ marginBottom: 10 }}>
-        <button className={`btn sm ${soloed ? "active" : ""}`} disabled={!control} title="Solo this fixture (shift-click to add to the current solo)" onClick={(e) => {
-          const next = e.shiftKey
-            ? (soloed ? show.solo.filter((x) => x !== f.id) : [...show.solo, f.id])
-            : (soloed && show.solo.length === 1 ? [] : [f.id]);
-          send({ type: "setSolo", fixtureIds: next });
-        }}>{soloed ? "Soloed" : "Solo"}</button>
-        <button className="btn sm" disabled={!control} onClick={() => send({ type: "testFixture", fixtureId: f.id, seconds: 2 })} title="Flash white for 2 s to find this fixture"><Flashlight /> Flash</button>
-        {ov && <button className="btn sm danger" disabled={!control} onClick={() => setOv(null)}>Clear override</button>}
-      </div>
-      <div className="param-group">
-        <h4>Manual override</h4>
-        <div className="param">
-          <span className="lbl">Intensity</span><span className="val">{ov?.dim !== undefined ? `${Math.round(ov.dim * 100)}%` : "pattern"}</span>
-          <input className="ctl" type="range" min={0} max={1} step={0.01} value={ov?.dim ?? (c?.dim ?? 1)} disabled={!control} onChange={(e) => setOv({ dim: Number(e.target.value) })} aria-label="Override intensity" />
-        </div>
-        {isColor && (
-          <div className="param" style={{ gridTemplateColumns: "1fr auto" }}>
-            <span className="lbl">Color</span>
-            <div className="color-ctl">
-              {ov?.r !== undefined && <span className="mono faint">override</span>}
-              <input type="color" disabled={!control} value={ov?.r !== undefined ? rgb01ToHex(ov.r, ov.g ?? 0, ov.b ?? 0) : c ? rgb01ToHex(c.r, c.g, c.b) : "#ffffff"} onChange={(e) => { const [r, g, b] = hexToRgb01(e.target.value); setOv({ r, g, b, dim: ov?.dim ?? 1 }); }} aria-label="Override color" />
-            </div>
-          </div>
-        )}
-      </div>
+      <p className="hint">Operator-only fixture. Patterns and light colors never touch it; use the {isHazeProfile(profile) ? "Haze" : "Lasers"} card below.</p>
     </div>
   );
 }

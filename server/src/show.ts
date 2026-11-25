@@ -425,11 +425,10 @@ export class ShowController extends EventEmitter<ShowEvents> {
 
   // ---- patterns ----
   setPattern(patternId: string | null, params?: ParamValues, crossfadeMs?: number, keepScene = false, by?: string) {
-    // An explicit pattern Start reclaims the room only after a global Stop/boot.
+    // A pattern Start takes every ordinary light back from manual colors; scene recall restores its own afterwards.
     const requested = patternId === null ? null : this.library.getPattern(patternId);
     if (patternId !== null && !requested) throw new Error("Pattern not found");
     if (requested?.error) throw new Error(`Pattern has an error: ${requested.error}`);
-    const wasStopped = this.state.stopped;
     this.ownershipBarrier(); this.invalidatePatternLasers(); this.loadedLaserPattern = null; this.patternSource = requested?.source ?? null;
     this.stopPlaylist(false);
     const showOwned = this.state.coordinatedShow?.fixtureIds ?? [];
@@ -452,7 +451,10 @@ export class ShowController extends EventEmitter<ShowEvents> {
     if (!p) throw new Error("Pattern not found");
     if (p.error) throw new Error(`Pattern has an error: ${p.error}`);
     const clean = sanitizeParams(p.params, params ?? (patternId === this.state.patternId ? this.state.params : undefined));
-    if (wasStopped) for (const f of washFixtures(this.getRig())) this.state.washes[f.id] = { ...defaultWashState(), owner: "pattern", mode: "normal" };
+    if (!keepScene) {
+      for (const f of washFixtures(this.getRig())) this.state.washes[f.id] = { ...(this.state.washes[f.id] ?? defaultWashState()), owner: "pattern", mode: "normal" };
+      this.state.overrides = {}; this.engine.overrides = {};
+    }
     this.state.stopped = false;
     this.state.outgoingPatternId = this.state.patternId;
     this.state.patternId = patternId;
@@ -716,6 +718,33 @@ export class ShowController extends EventEmitter<ShowEvents> {
     this.takeManualControl([fixtureId]);
     if (ov) { this.state.overrides[fixtureId] = ov; this.state.stopped = false; } else delete this.state.overrides[fixtureId];
     this.engine.overrides = this.state.overrides;
+    this.engine.refresh(); this.changed();
+  }
+
+  /** Color and/or brightness (0..1) for any ordinary lights, washes and strips alike. Held until the next pattern Start or Stop. */
+  setLights(ids: string[], brightness: number, rgb?: [number, number, number]) {
+    const parents = new Set(engineFixtures(this.getRig()).map((f) => f.parentId ?? f.id));
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 128 || new Set(ids).size !== ids.length || ids.some((id) => !parents.has(id))) throw new Error("Choose unique enabled ordinary fixtures");
+    if (!Number.isFinite(brightness) || brightness < 0 || brightness > 1) throw new Error("Brightness must be 0..1");
+    if (rgb && rgb.some((v) => !Number.isInteger(v) || v < 0 || v > 255)) throw new Error("Color bytes must be 0..255");
+    const washIds = new Set(washFixtures(this.getRig()).map((f) => f.id));
+    // Captures each light's live color first, so a brightness-only change keeps what it shows;
+    // a light that already has a color keeps its exact stored value rather than the frame's float32 copy.
+    const held = { ...this.state.overrides };
+    this.takeManualControl(ids);
+    for (const id of ids) {
+      if (washIds.has(id)) {
+        const prev = this.state.washes[id];
+        const mode = rgb || prev.mode === "off" ? "normal" : prev.mode;
+        this.state.washes[id] = { ...prev, mode, brightness: Math.round(brightness * 255), ...(rgb ? { rgbw: [...rgb, 0] as WashState["rgbw"] } : {}), owner: "manual" };
+        delete this.state.overrides[id];
+      } else {
+        const prev = held[id] ?? this.state.overrides[id] ?? {};
+        this.state.overrides[id] = { ...prev, ...(rgb ? { r: rgb[0] / 255, g: rgb[1] / 255, b: rgb[2] / 255, w: 0, a: 0, uv: 0 } : {}), dim: brightness, mix: 1 };
+      }
+    }
+    if (brightness > 0) this.state.stopped = false;
+    this.engine.overrides = this.state.overrides; this.engine.washes = this.state.washes;
     this.engine.refresh(); this.changed();
   }
 

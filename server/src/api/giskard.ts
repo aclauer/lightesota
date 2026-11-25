@@ -1,11 +1,11 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
-import { findProfile, washFixtures, washSide, type FixtureOverride, type Rig, type WashMode } from "../../../shared/src/index.js";
+import { findProfile, washFixtures, washSide, type Rig, type WashMode } from "../../../shared/src/index.js";
 import type { ShowController } from "../show.js";
 import type { AgentService } from "../agent/agent.js";
 import { OUTPUT_COMMISSIONED, PREVIEW } from "../output/policy.js";
 import { isLoopback } from "./auth.js";
-import { finite, idValue, object, validateOverride } from "./validate.js";
+import { finite, idValue, object } from "./validate.js";
 import { relayGate, type RelayGate } from "../integrations/giskard-relay.js";
 
 const BODY_LIMIT = 8192;
@@ -184,23 +184,8 @@ export function createGiskardApi(ctx: Context, options: GiskardOptions = {}) {
   function prepareApply(command: Exclude<Command, { kind: "agent_request" }>): () => void {
     if (command.kind === "quick_look") return () => ctx.show.quickLook(command.lookId, command.fixtureIds);
     if (command.kind === "wash_mode") return () => ctx.show.setWash(command.fixtureIds, { mode: command.mode, ...(command.sensitivity === undefined ? {} : { sensitivity: command.sensitivity }) });
-    const washIds = new Set(washFixtures(ctx.rigFile.get()).map((f) => f.id));
-    const selectedWashes = command.fixtureIds.filter((id) => washIds.has(id));
-    const rgb = command.color ? [1, 3, 5].map((i) => parseInt(command.color!.slice(i, i + 2), 16)) : undefined;
-    const overrides: { id: string; ov: FixtureOverride }[] = [];
-    for (const id of command.fixtureIds.filter((id) => !washIds.has(id))) {
-      const previous = ctx.show.state.overrides[id];
-      const frame = ctx.show.engine.lastFrame, i = frame?.fixtures.findIndex((f) => (f.parentId ?? f.id) === id) ?? -1;
-      const values = i >= 0 && frame ? Array.from(frame.values.slice(i * 8, i * 8 + 6)) : [0, 0, 0, 0, 0, 0];
-      const ov: FixtureOverride = { r: values[0], g: values[1], b: values[2], w: values[3], a: values[4], uv: values[5], ...previous, mix: 1, dim: command.brightness / 100 };
-      if (rgb) Object.assign(ov, { r: rgb[0] / 255, g: rgb[1] / 255, b: rgb[2] / 255, w: 0, a: 0, uv: 0 });
-      overrides.push({ id, ov: validateOverride(ov) });
-    }
-    // Precompute every ordinary override before any selected wash can change state.
-    return () => {
-      if (selectedWashes.length) ctx.show.setWash(selectedWashes, { brightness: Math.round(command.brightness * 255 / 100), ...(rgb ? { rgbw: [...rgb, 0] as [number, number, number, number] } : {}) });
-      for (const { id, ov } of overrides) ctx.show.setOverride(id, ov);
-    };
+    const rgb = command.color ? [1, 3, 5].map((i) => parseInt(command.color!.slice(i, i + 2), 16)) as [number, number, number] : undefined;
+    return () => ctx.show.setLights(command.fixtureIds, command.brightness / 100, rgb);
   }
   function handleBody(action: Action, req: Request, res: Response) {
     let identity: Identity | undefined, command: Command | undefined;

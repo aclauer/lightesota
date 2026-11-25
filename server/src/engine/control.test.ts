@@ -62,7 +62,7 @@ test("wash modes own selected fixtures; brightness retains music, RGBW forces No
   assert.equal(show.state.washes.w1.mode, "music6"); assert.equal(show.state.washes.w2.brightness, 38);
   show.setWash(["w1"], { rgbw: [0, 255, 255, 0] });
   assert.equal(show.state.washes.w1.mode, "normal"); assert.equal(show.state.washes.w1.sensitivity, 255);
-  show.setWash(["w2"], { mode: "off" }); show.setPattern(pattern.id, {}, 0);
+  show.setWash(["w2"], { mode: "off" });
   internal.publishFrame(new Float32Array(32).fill(1));
   assert.equal(show.engine.lastFrame!.values[6], Math.fround(22 / 255)); assert.equal(show.engine.lastFrame!.values[14], 0);
   assert.deepEqual(show.state.washes.w3, peer);
@@ -192,7 +192,7 @@ test("quiet or disconnected microphone drops stale BPM and activates shared-cloc
 });
 
 
-test("captured wash scenes restore modes without laser arming; explicit pattern Start releases only show ownership", (t) => {
+test("captured wash scenes restore modes without laser arming; an explicit pattern Start takes back every wash and light", (t) => {
   const { show } = harness(t);
   show.quickLook("music32", ["w2"]);
   const saved = show.captureScene("Music snapshot");
@@ -202,10 +202,11 @@ test("captured wash scenes restore modes without laser arming; explicit pattern 
   assert.equal(show.state.stopped, false);
   assert.equal(show.state.lasers.armed, false);
   show.startCoordinatedShow({ id: "neon-exchange", fixtureIds: ["w1"] });
+  show.setLights(["w3"], 0.5, [255, 0, 0]);
   show.setPattern(pattern.id, {}, 0);
-  assert.equal(show.state.washes.w1.owner, "pattern");
-  assert.equal(show.state.washes.w2.owner, "manual");
-  assert.equal(show.state.washes.w2.mode, "music32");
+  for (const id of ["w1", "w2", "w3"]) assert.equal(show.state.washes[id].owner, "pattern");
+  assert.equal(show.state.washes.w2.mode, "normal");
+  assert.deepEqual(show.state.overrides, {});
 });
 
 

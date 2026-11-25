@@ -117,7 +117,7 @@ Exactly one command object is allowed. The three typed fixture commands target 1
 {"kind":"set_lights","fixtureIds":["w1","w2"],"brightness":30,"color":"#ff8800"}
 ```
 
-`brightness` is a finite number in `0..100`; optional `color` is exactly `#RRGGBB` (case-insensitive). Targets may be ordinary washes, Hue or other enabled ordinary fixtures. Uses sticky `setWash`/`setOverride` control. Brightness-only preserves the current wash mode/color and the current non-wash color; changing the brightness of an off wash therefore leaves that mode off. Explicit color returns washes to Normal and clears their white component. Use `wash_mode` when the requested action is a mode change. Brightness is quantized to existing 0–255 wash dimmer values; readback reports that quantized value as percent.
+`brightness` is a finite number in `0..100`; optional `color` is exactly `#RRGGBB` (case-insensitive). Targets may be ordinary washes, Hue or other enabled ordinary fixtures. Uses `ShowController.setLights`, the same path as the console's Lights card. The result holds until the next pattern Start (which takes every ordinary light back) or Stop. Brightness-only preserves the current wash mode/color and the current non-wash color; an off wash turns on in Normal. Explicit color returns washes to Normal and clears their white component. Use `wash_mode` when the requested action is a mode change. Brightness is quantized to existing 0–255 wash dimmer values; readback reports that quantized value as percent.
 
 ```json
 {"kind":"wash_mode","fixtureIds":["w1"],"mode":"music6","sensitivity":160}

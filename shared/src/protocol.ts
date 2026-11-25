@@ -49,6 +49,8 @@ export type ClientMessage = ({ generation?: number } & (
   | { type: "resync" }
   | { type: "nudge"; ms: number }
   | { type: "setOverride"; fixtureId: string; override: FixtureOverride | null }
+  /** brightness 0..1; color "#rrggbb" (omit to keep each light's current color). */
+  | { type: "setLights"; fixtureIds: string[]; brightness: number; color?: string }
   | { type: "clearOverrides" }
   | { type: "setSolo"; fixtureIds: string[] }
   /** Arm/disarm the lasers (admin). */
@@ -103,7 +105,7 @@ export function requiredRole(msg: ClientMessage): Role {
     case "quickLook": return msg.lookId === "laser-duo" ? "admin" : "guest";
     case "setPattern": case "setParams": case "setMaster": case "setBlackout": case "setSpeed":
     case "setCrossfade": case "setBpm": case "tap": case "resync": case "nudge":
-    case "setOverride": case "clearOverrides": case "setSolo": case "recallScene":
+    case "setOverride": case "setLights": case "clearOverrides": case "setSolo": case "recallScene":
     case "playPlaylist": case "stopPlaylist": case "playlistNext": case "playlistPrev":
     case "testFixture": case "audio": case "setFollowMicBpm": case "setSleep": case "lasersOff": case "hazeOff":
       return "guest";

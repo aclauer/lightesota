@@ -6,7 +6,7 @@ export class CommandError extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
 }
 const TYPES = new Set([
-  "setPattern", "setParams", "setMaster", "setBlackout", "setSpeed", "setCrossfade", "setBpm", "tap", "resync", "nudge", "setOverride", "clearOverrides", "setSolo", "armLasers", "setLaser", "setLaserLook", "followPatternLasers", "lasersOff", "setReleased", "recallScene", "playPlaylist", "stopPlaylist", "playlistNext", "playlistPrev", "testFixture", "setFollowMicBpm", "setSleep", "stopLighting", "takeManualControl", "setWash", "releaseWashes", "quickLook", "startCoordinatedShow", "setHaze", "hazeOff",
+  "setPattern", "setParams", "setMaster", "setBlackout", "setSpeed", "setCrossfade", "setBpm", "tap", "resync", "nudge", "setOverride", "setLights", "clearOverrides", "setSolo", "armLasers", "setLaser", "setLaserLook", "followPatternLasers", "lasersOff", "setReleased", "recallScene", "playPlaylist", "stopPlaylist", "playlistNext", "playlistPrev", "testFixture", "setFollowMicBpm", "setSleep", "stopLighting", "takeManualControl", "setWash", "releaseWashes", "quickLook", "startCoordinatedShow", "setHaze", "hazeOff",
 ]);
 export const isControlCommand = (v: unknown): boolean => !!v && typeof v === "object" && TYPES.has((v as {type:string}).type);
 function boolean(v: unknown, label: string): boolean { if (typeof v !== "boolean") throw new CommandError(`${label} must be boolean`); return v; }
@@ -49,6 +49,11 @@ export function dispatchControl(ctx: AppContext, raw: unknown, actor: {role: Rol
     case "resync": show.resync(); return;
     case "nudge": show.nudge(finite(msg.ms, -5000, 5000, "nudge")); return;
     case "setOverride": ordinary(msg.fixtureId); show.setOverride(msg.fixtureId, msg.override === null ? null : validateOverride(msg.override)); return;
+    case "setLights": {
+      if (msg.color !== undefined && (typeof msg.color !== "string" || !/^#[0-9a-f]{6}$/i.test(msg.color))) throw new CommandError("Color must be #RRGGBB");
+      const rgb = msg.color ? [1, 3, 5].map((i) => parseInt(msg.color!.slice(i, i + 2), 16)) as [number, number, number] : undefined;
+      show.setLights(ids(msg.fixtureIds), finite(msg.brightness, 0, 1, "brightness"), rgb); return;
+    }
     case "clearOverrides": show.clearOverrides(); return;
     case "setSolo": ids(msg.fixtureIds).forEach(ordinary); show.setSolo(msg.fixtureIds); return;
     case "armLasers": show.armLasers(boolean(msg.armed, "armed"), actor.name); return;
